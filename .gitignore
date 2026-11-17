@@ -1,0 +1,14 @@
+# 私人数据（不要提交到公共仓库）
+user-data/
+mobile-data/
+# 生成物
+mobile/
+android/
+# 备份与压缩包
+*.zip
+*.bak
+# 依赖与密钥
+node_modules/
+.env
+*.key
+*.keystore

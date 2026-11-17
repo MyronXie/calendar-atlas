@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {rankSections,toggleRankHidden} from '../filters.js';
+import {regionFromAddress} from '../place-categories.js';
+const rows=[['A',12],['B',8],['C',3]],original=JSON.stringify(rows);
+let hidden=toggleRankHidden([],' A ');assert.deepEqual(rankSections(rows,hidden),{visible:[['B',8],['C',3]],hidden:[['A',12]]});
+hidden=toggleRankHidden(hidden,'A');assert.deepEqual(rankSections(rows,hidden).visible,rows);assert.equal(JSON.stringify(rows),original);
+const cities=[{name:'苏州市',province:'江苏省'},{name:'杭州市',province:'浙江省'}],provinces=['上海市','北京市','江苏省','浙江省','广西壮族自治区'];
+assert.deepEqual(regionFromAddress('上海市闵行区某路1号',cities,provinces),{country:'中国',province:'上海市',city:'上海市'});
+assert.deepEqual(regionFromAddress('苏州市姑苏区某路2号',cities,provinces),{country:'中国',province:'江苏省',city:'苏州市'});
+assert.deepEqual(regionFromAddress('中国浙江省杭州市某路3号',cities,provinces),{country:'中国',province:'浙江省',city:'杭州市'});
+assert.deepEqual(regionFromAddress('某路4号',cities,provinces,{country:'中国',province:'上海市',city:'上海市'}),{country:'中国',province:'上海市',city:'上海市'});
+assert.deepEqual(regionFromAddress('Singapore EXPO',cities,provinces,{country:'中国',province:'上海市',city:'上海市'}),{country:'新加坡',city:'新加坡'});
+assert.deepEqual(regionFromAddress('',cities,provinces,{country:'中国'}),{});
+console.log('Rank demotion/restoration preserves counts; local address region inference: passed');

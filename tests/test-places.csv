@@ -1,0 +1,2 @@
+﻿location,address,lat,lon,valid,type,datum
+Synthetic place,Test address,31.2,121.4,,,wgs84
