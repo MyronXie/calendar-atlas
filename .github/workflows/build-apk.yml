@@ -47,6 +47,16 @@ jobs:
       - name: Sync
         run: npx cap sync android
 
+      - name: Restore signing keystore
+        run: |
+          if [ -n "${{ secrets.ANDROID_DEBUG_KEYSTORE }}" ]; then
+            mkdir -p "$HOME/.android"
+            echo "${{ secrets.ANDROID_DEBUG_KEYSTORE }}" | base64 -d > "$HOME/.android/debug.keystore"
+            echo "using stable keystore from ANDROID_DEBUG_KEYSTORE"
+          else
+            echo "no ANDROID_DEBUG_KEYSTORE secret; using ephemeral debug keystore"
+          fi
+
       - name: Build debug APK
         run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
 
