@@ -15,9 +15,10 @@ const cp = (src, dst) => fs.cp(path.join(root, src), path.join(out, dst), { recu
 await fs.rm(out, { recursive: true, force: true });
 await fs.mkdir(path.join(out, 'data'), { recursive: true });
 
-for (const f of ['style.css', 'core.js', 'place-categories.js', 'organize.js', 'emoji.js', 'filters.js', 'appearance.js', 'timeline.js']) await fs.writeFile(path.join(out, f), await rd(f));
+for (const f of ['style.css', 'core.js', 'place-categories.js', 'organize.js', 'emoji.js', 'filters.js', 'appearance.js', 'timeline.js', 'annual-review.js']) await fs.writeFile(path.join(out, f), await rd(f));
 await cp('vendor', 'vendor');
-for (const n of ['world', 'china', 'cities', 'local-reference', 'city-boundaries']) await fs.copyFile(path.join(root, 'data', n + '.json'), path.join(out, 'data', n + '.json'));
+for (const g of ['gcoord.global.prod.js', 'gcoord.LICENSE']) await fs.rm(path.join(out, 'vendor', g), { force: true });
+for (const n of ['world', 'china', 'local-reference', 'city-boundaries', 'shanghai-landmarks']) await fs.copyFile(path.join(root, 'data', n + '.json'), path.join(out, 'data', n + '.json'));
 
 let placeRows = 0;
 if (!DATA_LESS) {
@@ -53,12 +54,12 @@ await fs.writeFile(path.join(out, 'manifest.webmanifest'), JSON.stringify({
 }, null, 2));
 
 // service worker
-const files = ['index.html', 'app.js', 'mobile-readonly.js', 'style.css', 'core.js', 'place-categories.js', 'organize.js', 'emoji.js', 'filters.js', 'appearance.js', 'timeline.js',
+const files = ['index.html', 'app.js', 'mobile-readonly.js', 'style.css', 'core.js', 'place-categories.js', 'organize.js', 'emoji.js', 'filters.js', 'appearance.js', 'timeline.js', 'annual-review.js',
   'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/leaflet.markercluster.js', 'vendor/MarkerCluster.css', 'vendor/MarkerCluster.Default.css', 'vendor/leaflet-heat.js', 'vendor/ical.min.js',
-  'data/world.json', 'data/china.json', 'data/cities.json', 'data/local-reference.json', 'data/city-boundaries.json', 'manifest.webmanifest'];
+  'data/world.json', 'data/china.json', 'data/local-reference.json', 'data/city-boundaries.json', 'data/shanghai-landmarks.json', 'manifest.webmanifest'];
 if (DATA_LESS) files.push('data-provider.js');
 else files.push('data/place.json', 'data/config.json', 'data/calendar.ics');
-const sw = `const CACHE='atlas-v1';const FILES=${JSON.stringify(files)};
+const sw = `const CACHE='atlas-v7';const FILES=${JSON.stringify(files)};
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
 self.addEventListener('fetch',e=>{const u=new URL(e.request.url);if(e.request.method!=='GET'||u.origin!==location.origin)return;e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(resp=>{const cp=resp.clone();caches.open(CACHE).then(c=>c.put(e.request,cp));return resp;}).catch(()=>caches.match('index.html'))));});`;
