@@ -13,7 +13,7 @@ if(-not(Test-AtlasService)){
   $atlasDeadline=[DateTime]::UtcNow.AddSeconds(12)
   while(-not(Test-AtlasService)){
     $atlasProcess.Refresh()
-    if($atlasProcess.HasExited){throw 'Calendar Atlas stopped during startup. Check user-data files and run node server.mjs to inspect the error.'}
+    if($atlasProcess.HasExited){throw 'Calendar Atlas stopped during startup. Check atlas-data files and run node server.mjs to inspect the error.'}
     if([DateTime]::UtcNow -gt $atlasDeadline){throw 'The service did not become ready. Try node server.mjs in the project directory.'}
     Start-Sleep -Milliseconds 200
   }

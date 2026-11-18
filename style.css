@@ -101,6 +101,17 @@ dialog{width:520px;max-width:94vw;max-height:92vh;overflow:auto;padding:22px;bor
 .region-label{background:transparent!important;border:0!important;box-shadow:none!important;color:#3a4a3f;font:600 12px/1.1 system-ui,-apple-system,Segoe UI,sans-serif;text-shadow:0 1px 2px #fff,0 0 3px #fff;white-space:nowrap;text-align:center;transform:translate(-50%,-50%);pointer-events:none}
 
 .brush-label{position:absolute;top:50%;font-size:11px;color:var(--accent);font-variant-numeric:tabular-nums;pointer-events:none;white-space:nowrap;z-index:2}#timeline-track.monthly .bar-stack{width:100%}#timeline-track.monthly .yearbar.year-start{box-shadow:-2px 0 0 var(--soft)}
+.brush-label{transform:translateY(-50%)}
+#brushtrack.stacked-endpoint{margin-bottom:24px}
+#brushtrack.stacked-endpoint #period-end{top:calc(100% + 5px);transform:none}
+.yearbar .year-short{display:none}
+#timeline-track.compact-years #yearbars{gap:1px}
+#timeline-track.compact-years .yearbar{gap:4px;padding:0}
+#timeline-track.compact-years .year-full{display:none}
+#timeline-track.compact-years .year-short{display:inline}
+#timeline-track.compact-years .bar-stack{width:94%}
+#timeline-track.compact-years .barcount{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.atlas-touch-hint{display:block;color:var(--muted);font-size:11px}
 
 .region-label.unlit{color:#3a4a3f;font-weight:600}.capital-star{color:#e0a800;font-size:18px;line-height:1;text-shadow:0 1px 2px #fff,0 0 3px #fff;transform:translate(-50%,-50%)}
 

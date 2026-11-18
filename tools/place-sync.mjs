@@ -2,16 +2,18 @@
 // produce an MD report + decision CSV. Does NOT modify place.csv.
 // Usage: AMAP_KEY=xxx node tools/place-sync.mjs [--out reports/..md] [--decisions reports/..csv]
 import fs from 'node:fs/promises';
+import {ensureAtlasData} from '../atlas-data.mjs';
 import ICAL from '../vendor/ical.min.js';
 import {details} from '../core.js';
-import {norm, core, coreSim, amapText, baiduText, loadPlaces, fmtKey, todayStr, rootURL} from './place-common.mjs';
+import {norm, coreSim, amapText, baiduText, loadPlaces, fmtKey, todayStr, rootURL} from './place-common.mjs';
 import {stringifyCSV} from '../csv-store.mjs';
 const argv = process.argv.slice(2); const arg = (n, d) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : d; };
 const key = todayStr().replace(/\//g, '');
 const OUT = arg('--out', `reports/日历地点同步报告_${key}.md`);
 const DEC = arg('--decisions', `reports/日历地点同步_决策_${key}.csv`);
-const icsFile = arg('--ics', 'user-data/calendar.ics');
-const comp = new ICAL.Component(ICAL.parse(await fs.readFile(new URL(icsFile, rootURL), 'utf8')));
+const icsFile = arg('--ics');
+const calendar = icsFile?new URL(icsFile,rootURL):new URL('calendar.ics',await ensureAtlasData());
+const comp = new ICAL.Component(ICAL.parse(await fs.readFile(calendar, 'utf8')));
 try { for (const z of comp.getAllSubcomponents('vtimezone')) { const tz = new ICAL.Timezone(z); ICAL.TimezoneService.register(tz.tzid, tz); } } catch { }
 const tokens = new Map(); // norm -> {name, first, last, count}
 for (const c of comp.getAllSubcomponents('vevent')) {

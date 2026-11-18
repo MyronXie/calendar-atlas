@@ -1,4 +1,51 @@
-import fs from 'node:fs/promises';import path from 'node:path';import {randomUUID,createHash} from 'node:crypto';import {parseCSV,stringifyCSV} from './csv-store.mjs';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {randomUUID,createHash} from 'node:crypto';
+import {parseAtlasConfig,normalizeBlacklist,parseCSV} from './data-formats.js';
+
 const columns=['type','enabled','match_type','value','reason'];
-export async function readConfig(dir){const [raw,emoji]=await Promise.all(['blacklist.csv','emoji-map.json'].map(n=>fs.readFile(path.join(dir,n),'utf8')));const blacklist=parseCSV(raw,columns).places.map(row=>Object.fromEntries(columns.map(k=>[k,k==='enabled'?(['0','false','no'].includes(String(row[k]).toLowerCase())?'0':'1'):row[k]||''])));for(const r of blacklist){if(!['place','event'].includes(r.type))throw Error('黑名单 type 必须为 place 或 event');}const eventRules=blacklist.filter(r=>r.type==='event'),placeRules=blacklist.filter(r=>r.type==='place');return {version:createHash('sha256').update(raw+'\0'+emoji).digest('hex'),blacklist,eventRules,placeRules,emojis:JSON.parse(emoji)};}
-export async function saveConfig(dir,input){const current=await readConfig(dir);if(current.version!==input.version){const e=Error('黑名单或映射文件已被修改，请重新读取后再操作');e.status=409;throw e;}if(!Array.isArray(input.blacklist)||input.blacklist.length>5000)throw Error('黑名单格式无效');const rows=input.blacklist.map(r=>{if(!r||!['event','place'].includes(r.type)||!['contains','exact','uid'].includes(r.match_type)||r.type==='place'&&r.match_type==='uid')throw Error('规则类型无效');if(typeof r.value!=='string'||!r.value.trim()||r.value.length>2000||r.reason!==undefined&&(typeof r.reason!=='string'||r.reason.length>4000))throw Error('规则内容无效');return {type:r.type,enabled:r.enabled==='0'||r.enabled===false?'0':'1',match_type:r.match_type,value:r.value.trim(),reason:r.reason||''};});const file=path.join(dir,'blacklist.csv'),old=await fs.readFile(file,'utf8');await fs.mkdir(path.join(dir,'.backups'),{recursive:true});await fs.writeFile(path.join(dir,'.backups','blacklist.csv.'+Date.now()+'.'+randomUUID()+'.bak'),old,{flag:'wx'});const tmp=file+'.'+randomUUID()+'.tmp';try{await fs.writeFile(tmp,stringifyCSV({headers:columns,places:rows}),{flag:'wx'});if((await readConfig(dir)).version!==input.version){const e=Error('文件在保存期间被修改，请重新读取');e.status=409;throw e;}await fs.rename(tmp,file);}catch(e){await fs.unlink(tmp).catch(()=>{});throw e;}return readConfig(dir);}
+const version=raw=>createHash('sha256').update(raw).digest('hex');
+export const encodeConfig=({blacklist,emojis})=>JSON.stringify({blacklist,emojis},null,2)+'\n';
+
+export async function readLegacyConfig(dir){
+ const [raw,emoji]=await Promise.all(['blacklist.csv','emoji-map.json'].map(name=>fs.readFile(path.join(dir,name),'utf8')));
+ const blacklist=parseCSV(raw,columns).places;
+ return parseAtlasConfig(JSON.stringify({blacklist,emojis:JSON.parse(emoji.replace(/^\uFEFF/,''))}));
+}
+
+export async function readConfig(dir){
+ const raw=await fs.readFile(path.join(dir,'config.json'),'utf8');
+ return {...parseAtlasConfig(raw),version:version(raw)};
+}
+
+export async function saveConfig(dir,input){
+ const file=path.join(dir,'config.json');
+ const raw=await fs.readFile(file,'utf8');
+ const expected=input.version;
+ if(version(raw)!==expected){
+  const error=Error('黑名单或映射文件已被修改，请重新读取后再操作');
+  error.status=409;
+  throw error;
+ }
+ const {emojis}=parseAtlasConfig(raw);
+ const blacklist=normalizeBlacklist(input.blacklist);
+ const output=encodeConfig({blacklist,emojis});
+ if(output===raw)return {...parseAtlasConfig(raw),version:expected};
+ const backup=path.join(dir,'.backups');
+ await fs.mkdir(backup,{recursive:true});
+ await fs.writeFile(path.join(backup,'config.json.'+Date.now()+'.'+randomUUID()+'.bak'),raw,{flag:'wx'});
+ const tmp=file+'.'+randomUUID()+'.tmp';
+ try{
+  await fs.writeFile(tmp,output,{flag:'wx'});
+  if(version(await fs.readFile(file,'utf8'))!==expected){
+   const error=Error('配置在保存期间被修改，请重新读取');
+   error.status=409;
+   throw error;
+  }
+  await fs.rename(tmp,file);
+ }catch(error){
+  await fs.unlink(tmp).catch(()=>{});
+  throw error;
+ }
+ return {...parseAtlasConfig(output),version:version(output)};
+}

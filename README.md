@@ -2,27 +2,30 @@
 
 日常操作请看 [使用说明.md](使用说明.md)。双击“启动足迹.cmd”即可启动并打开，双击“关闭足迹.cmd”停止本机服务。
 
-双击“启动足迹.cmd”，访问 http://127.0.0.1:8787。需要本机 Node.js，无需安装依赖。日历、地点和配置集中放在项目根目录的 user-data 文件夹；备份整个文件夹即可。
+双击“启动足迹.cmd”，访问 http://127.0.0.1:8787。需要本机 Node.js，无需安装依赖。日历、地点和配置集中放在项目根目录的 atlas-data 文件夹；备份整个文件夹即可。
 
 ## 当前数据文件
 
-- user-data/calendar.ics：当前日历。应用只读，不修改事件。
-- user-data/place.csv：地点库，地点管理直接读写。列为 location、address、adcode、lat、lon、firstShown、lastShown、valid、type、labels、aliases（另有可选 country、province、city、datum）。valid：YY/MM/DD=核验在营、no=停业、skip=待下次验证、空=未核验。
-- user-data/blacklist.csv：统一黑名单，以 type=place/event 区分。
-- user-data/emoji-map.json：单次到访点位的 emoji 自动映射。
-- user-data/.backups：页面保存地点或黑名单时自动生成的旧版本备份。
+- atlas-data/calendar.ics：当前日历。应用只读，不修改事件。
+- atlas-data/place.csv：地点库，地点管理直接读写。列为 location、address、adcode、lat、lon、firstShown、lastShown、valid、type、labels、aliases（另有可选 country、province、city、datum）。valid：YY/MM/DD=核验在营、no=停业、skip=待下次验证、空=未核验。
+- atlas-data/config.json：合并存放黑名单（blacklist）和点位 emoji 映射（emojis）。
+- atlas-data/.backups：页面保存地点或黑名单时自动生成的旧版本备份。
 
-已将用户更新的根目录日历和地点库移至上述文件。历史导出（旧 E 盘日历、outputs）不随工程保留，也不是默认活动数据源。环境变量 CALENDAR_PATH、PLACES_PATH 可显式覆盖活动源。不要直接把 user-data 文件夹放到公开网站。
+旧版升级时，首次启动会从 user-data 迁移这三个文件，旧目录保留作为备份。历史导出（旧 E 盘日历、outputs）不随工程保留，也不是默认活动数据源。环境变量 CALENDAR_PATH、PLACES_PATH 可显式覆盖活动源。不要直接把 atlas-data 文件夹放到公开网站。
+
+## 手机端使用同一套数据
+
+首次在新版 APK 中导入时，把 `atlas-data/` 里的 `calendar.ics`、`place.csv` 和 `config.json` 传到手机，在「导入/更新数据」中选择。以后只需传发生变化的文件，日历导出后直接替换原 ICS。GitHub Actions 仍构建不含私人数据的 APK。
 
 ## valid=no 的含义（已更正）
 
 表示该地点现在已经停业，不是无效地址或黑名单。过去的事件、到访次数和同伴统计仍然保留；地点管理可选择“现已停业”查看。此类记录的现有坐标也继续可用。是否排除只能由独立黑名单决定。
 
-此前 outputs 中把这 22 条记录导出为黑名单的快照语义有误，请不要再导入。活动黑名单为 user-data/blacklist.csv，valid=no 不会自动生成黑名单。
+此前 outputs 中把这 22 条记录导出为黑名单的快照语义有误，请不要再导入。活动黑名单位于 atlas-data/config.json 的 blacklist 字段，valid=no 不会自动生成黑名单。
 
-## 统一黑名单 CSV
+## 黑名单与 emoji 配置
 
-唯一活动文件为 user-data/blacklist.csv，列固定为 type、enabled、match_type、value、reason。无 source、start_date、end_date 列，规则不限时间。type 为 event 或 place；enabled 为 1/0；match_type 为 contains、exact 或事件专用 uid；value 为匹配值，reason 可留空。
+黑名单放在 atlas-data/config.json 的 blacklist 数组，每条规则的字段为 type、enabled、match_type、value、reason。无 source、start_date、end_date 列，规则不限时间。type 为 event 或 place；enabled 为 1/0；match_type 为 contains、exact 或事件专用 uid；value 为匹配值，reason 可留空。
 
 排除设置与此文件直接同步，支持按类型筛选、搜索、新增、编辑、删除、启用复选框。操作成功即保存并刷新统计，每次写入备份到 .backups；外部修改造成版本冲突时拒绝覆盖，可重新读取。正在编辑规则时暂停自动刷新，保留表单。旧的分表不再读取，历史备份已清理。
 
@@ -30,7 +33,7 @@ valid=no 仍仅表示现已停业，与黑名单无关。
 
 ## emoji
 
-具体地点到访一次时显示 emoji；多次仍显示次数；聚合群组继续显示数量。优先顺序：全部由 emoji-map.json 管理：placeEmojis 精确地点覆盖 > 事件规则 > labelEmojis 标签 > 其他关键词规则 > typeEmojis 分类 > defaultEmoji。
+具体地点到访一次时显示 emoji；多次仍显示次数；聚合群组继续显示数量。优先顺序：全部由 config.json 的 emojis 字段管理：placeEmojis 精确地点覆盖 > 事件规则 > labelEmojis 标签 > 其他关键词规则 > typeEmojis 分类 > defaultEmoji。
 
 映射规则 scope 支持 event（事件名称）、place（地点名称）、type（地点分类），keywords 为任意匹配的词，emoji 为显示内容。当前包括演唱会/音乐会 🎵、寿司 🍣、火锅 🍲、烤肉 🥩、咖啡 ☕、面馆 🍜、披萨 🍕、博物馆 🏛️、公园 🌳、机场 ✈️、车站 🚆、酒店 🏨、桌游 🎮 等。映射只是展示提示，不参与地点识别、黑名单和统计。
 
@@ -98,7 +101,7 @@ node tests/runtime-test.mjs、node tests/marker-test.mjs、node tests/note-test.
 
 ## 工程目录整理
 
-根目录保留应用源码与启动入口；自动化检查归入 tests，使用 npm test；本地日历检查工具归入 tools，使用 npm run audit。当前整理报告为 reports/日历内容整理检查.md，待补坐标为 user-data/待补坐标_place.csv。报告与 CSV 均含私人数据，请勿上传。旧报告、旧导出、历史备份和重复压缩包已清理。
+根目录保留应用源码与启动入口；自动化检查归入 tests，使用 npm test；本地日历检查工具归入 tools，使用 npm run audit。当前整理报告为 reports/日历内容整理检查.md，待补坐标为 atlas-data/待补坐标_place.csv。报告与 CSV 均含私人数据，请勿上传。旧报告、旧导出、历史备份和重复压缩包已清理。
 
 ## 当前严格备注规则与标题控件
 
@@ -106,4 +109,4 @@ node tests/runtime-test.mjs、node tests/marker-test.mjs、node tests/note-test.
 
 地图标题右侧恢复底图、层级/热力图下拉、全部点位；热力图与地点、城市等同列。事件标题右侧恢复地点/人物显示开关；偏好仅保留配色，删除重复的展开区域开关。事件名称列稍窄，地点/人物列更宽，空状态统一居中。
 
-新增 22 条基于当前本地内容的 emoji 规则，包括桌游 🎲、剧本杀 🕵️、密室 🔐、电影 🎬、运动、寿喜烧、烤鱼、烘焙、书店等；活动规则优先于一般场所规则，精确地点覆盖由 emoji-map.json 的 placeEmojis 维护。
+新增 22 条基于当前本地内容的 emoji 规则，包括桌游 🎲、剧本杀 🕵️、密室 🔐、电影 🎬、运动、寿喜烧、烤鱼、烘焙、书店等；活动规则优先于一般场所规则，精确地点覆盖由 config.json 中 emojis 的 placeEmojis 维护。

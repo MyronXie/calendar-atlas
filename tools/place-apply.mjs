@@ -3,7 +3,8 @@
 //   verify : keep/rename/closed from validity check.
 // Usage: node tools/place-apply.mjs --decisions <csv> --mode sync|verify
 import fs from 'node:fs/promises';
-import {parseCSV, stringifyCSV} from '../csv-store.mjs';
+import {parseCSV} from '../csv-store.mjs';
+import {ensureAtlasData} from '../atlas-data.mjs';
 import ICAL from '../vendor/ical.min.js';
 import {details} from '../core.js';
 import {norm, loadPlaces, savePlaces, todayStr, fmtKey, rootURL} from './place-common.mjs';
@@ -34,7 +35,7 @@ for (const d of dec) {
   else skipped++;
 }
 if (MODE === 'sync') {
-  const comp = new ICAL.Component(ICAL.parse(await fs.readFile(new URL('user-data/calendar.ics', rootURL), 'utf8')));
+  const comp = new ICAL.Component(ICAL.parse(await fs.readFile(new URL('calendar.ics', await ensureAtlasData()), 'utf8')));
   try { for (const z of comp.getAllSubcomponents('vtimezone')) { const tz = new ICAL.Timezone(z); ICAL.TimezoneService.register(tz.tzid, tz); } } catch { }
   const first = new Map(), last = new Map();
   for (const c of comp.getAllSubcomponents('vevent')) { let e; try { e = new ICAL.Event(c); } catch { continue; } const s = e.startDate; if (!s) continue; const k = s.year * 10000 + s.month * 100 + s.day; let det; try { det = details(e); } catch { continue; } for (const t of det.places) { const n = norm(t); if (!n) continue; const f = first.get(n); if (!f || k < f) first.set(n, k); const l = last.get(n); if (!l || k > l) last.set(n, k); } }

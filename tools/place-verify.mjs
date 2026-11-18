@@ -2,7 +2,7 @@
 // Produces MD report + decision CSV. Does NOT modify place.csv.
 // Usage: AMAP_KEY=xxx node tools/place-verify.mjs [--months 3]
 import fs from 'node:fs/promises';
-import {norm, core, coreSim, dist, amapText, amapAround, baiduText, photonReverse, photonSearch, loadPlaces, todayStr, parseDateYY, daysBetween, rootURL} from './place-common.mjs';
+import {norm, coreSim, dist, amapText, amapAround, baiduText, photonReverse, photonSearch, loadPlaces, todayStr, parseDateYY, daysBetween, rootURL} from './place-common.mjs';
 import {stringifyCSV} from '../csv-store.mjs';
 const argv = process.argv.slice(2); const arg = (n, d) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : d; };
 const MONTHS = Number(arg('--months', 3)); const key = todayStr().replace(/\//g, '');

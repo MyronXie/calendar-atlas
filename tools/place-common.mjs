@@ -1,6 +1,7 @@
 // Shared helpers for place workflows (Amap + Baidu + matching).
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
+import {ensureAtlasData} from '../atlas-data.mjs';
 import {fileURLToPath} from 'node:url';
 import {parseCSV, stringifyCSV} from '../csv-store.mjs';
 const root = new URL('../', import.meta.url);
@@ -36,9 +37,10 @@ export async function baiduText(keyword, cityCode = 289) {
     return raw.filter(p => p.name && p.geo && p.addr).map(p => { const m = p.geo.split('|').at(-1).match(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/); if (!m) return null; const [lon, lat] = gc.transform([+m[1], +m[2]], gc.BD09MC, gc.GCJ02); const vis = JSON.stringify([p.name, p.show_tag, p.ext_display, p.title_status, p.business_status, p.shop_status]); const closed = vis.match(/永久关闭|已停业|已关闭|已歇业/); return { src: 'baidu', name: p.name, address: (p.area_name || '') + p.addr, lat: +lat.toFixed(7), lon: +lon.toFixed(7), closed: closed ? closed[0] : '' }; }).filter(Boolean);
   } catch (e) { return []; }
 }
-export async function loadPlaces(rel = 'user-data/place.csv') { return parseCSV(await fs.readFile(new URL(rel, root), 'utf8')); }
-export async function savePlaces(db, rel = 'user-data/place.csv') {
-  const f = fileURLToPath(new URL(rel, root)); const raw = await fs.readFile(f, 'utf8'); const out = stringifyCSV(db);
+const placesURL=async rel=>rel?new URL(rel,root):new URL('place.csv',await ensureAtlasData());
+export async function loadPlaces(rel) { return parseCSV(await fs.readFile(await placesURL(rel), 'utf8')); }
+export async function savePlaces(db, rel) {
+  const f = fileURLToPath(await placesURL(rel)); const raw = await fs.readFile(f, 'utf8'); const out = stringifyCSV(db);
   if (out === raw) return false;
   const path = await import('node:path'); const bakDir = path.join(path.dirname(f), '.backups'); await fs.mkdir(bakDir, { recursive: true }).catch(() => {});
   await fs.writeFile(path.join(bakDir, 'place.csv.' + Date.now() + '.bak'), raw, { flag: 'wx' });

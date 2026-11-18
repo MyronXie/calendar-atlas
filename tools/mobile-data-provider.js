@@ -1,67 +1,135 @@
-// data-less mobile: store user data in IndexedDB; serve data/place.json|config.json|calendar.ics from it;
-// provide an in-app "导入/更新数据" UI (pick 3 files exported from PC).
-(function () {
-  var DB = 'atlas-data', STORE = 'files';
-  function open() { return new Promise(function (res, rej) { var r = indexedDB.open(DB, 1); r.onupgradeneeded = function () { r.result.createObjectStore(STORE); }; r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; }); }
-  function get(k) { return open().then(function (db) { return new Promise(function (res) { try { var t = db.transaction(STORE, 'readonly').objectStore(STORE).get(k); t.onsuccess = function () { res(t.result == null ? null : t.result); }; t.onerror = function () { res(null); }; } catch (e) { res(null); } }); }); }
-  function put(k, v) { return open().then(function (db) { return new Promise(function (res) { try { var t = db.transaction(STORE, 'readwrite').objectStore(STORE).put(v, k); t.onsuccess = function () { res(true); }; t.onerror = function () { res(false); }; } catch (e) { res(false); } }); }); }
-  var orig = window.fetch ? window.fetch.bind(window) : null;
-  window.fetch = function (input, init) {
-    try {
-      var url = typeof input === 'string' ? input : (input && input.url) || '';
-      var m = url.match(/data\/(place\.json|config\.json|calendar\.ics)(?:[?#].*)?$/);
-      if (m) {
-        var name = m[1];
-        return get(name).then(function (v) {
-          if (v == null) { return Promise.reject(new Error('NO_DATA:' + name)); }
-          var ct = name.slice(-4) === '.ics' ? 'text/calendar; charset=utf-8' : 'application/json; charset=utf-8';
-          return new Response(v, { status: 200, headers: { 'Content-Type': ct } });
-        });
-      }
-    } catch (e) { }
-    return orig.apply(this, arguments);
-  };
-  function ui() {
-    var old = document.getElementById('atlas-import-card'); if (old) old.remove();
-    var wrap = document.createElement('div'); wrap.id = 'atlas-import-card';
-    wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
-    wrap.innerHTML = '<div style="background:#fff;max-width:430px;width:100%;border-radius:12px;padding:18px;font:14px/1.5 system-ui,-apple-system,sans-serif;color:#222">'
-      + '<h2 style="margin:0 0 6px">导入 / 更新数据</h2>'
-      + '<p style="margin:0 0 10px;color:#555">选择电脑导出的 3 个文件：place.json、calendar.ics、config.json。导入后立即生效，可随时再次更新。</p>'
-      + '<label style="display:block;margin:6px 0">地点 place.json<input id="imp-place" type="file" accept=".json,application/json" style="display:block;margin-top:4px"></label>'
-      + '<label style="display:block;margin:6px 0">日历 calendar.ics<input id="imp-ics" type="file" accept=".ics,text/calendar" style="display:block;margin-top:4px"></label>'
-      + '<label style="display:block;margin:6px 0">配置 config.json<input id="imp-config" type="file" accept=".json,application/json" style="display:block;margin-top:4px"></label>'
-      + '<div style="display:flex;gap:8px;margin-top:12px"><button id="imp-go" style="flex:1;padding:10px;background:#2563eb;color:#fff;border:0;border-radius:8px">导入并进入</button><button id="imp-close" style="padding:10px;border:1px solid #ccc;background:#fff;border-radius:8px">关闭</button></div>'
-      + '<div id="imp-msg" style="color:#b45309;margin-top:8px;min-height:18px"></div></div>';
-    document.body.appendChild(wrap);
-    document.getElementById('imp-close').onclick = function () { wrap.remove(); };
-    document.getElementById('imp-go').onclick = async function () {
-      var msg = document.getElementById('imp-msg');
-      var fp = document.getElementById('imp-place').files[0], fi = document.getElementById('imp-ics').files[0], fc = document.getElementById('imp-config').files[0];
-      if (!fp || !fi || !fc) { msg.textContent = '请选择全部 3 个文件'; return; }
-      msg.textContent = '导入中…';
-      try {
-        await put('place.json', await fp.text());
-        await put('calendar.ics', await fi.text());
-        await put('config.json', await fc.text());
-        msg.textContent = '导入完成，正在进入…';
-        setTimeout(function () { location.reload(); }, 400);
-      } catch (e) { msg.textContent = '导入失败：' + e.message; }
-    };
+import {parseCalendar} from './core.js';
+import {parseAtlasConfig,parseMobilePlaces} from './data-formats.js';
+
+const importing=document.documentElement.dataset.mobileSource==='import';
+document.documentElement.dataset.mobile='1';
+const originalFetch=window.fetch.bind(window);
+const base=new URL('.',location.href);
+const names=['place.csv','calendar.ics','config.json'];
+const storedNames=[...names,'place.json'];
+let dbRequest,storedData;
+const getStoredData=()=>storedData??=readFiles();
+const jsonResponse=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8'}});
+
+function openDB(){
+ if(!dbRequest){
+  dbRequest=new Promise((resolve,reject)=>{
+   const request=indexedDB.open('atlas-data',1);
+   request.onupgradeneeded=()=>request.result.createObjectStore('files');
+   request.onsuccess=()=>resolve(request.result);
+   request.onerror=()=>reject(request.error);
+  }).catch(error=>{dbRequest=null;throw error;});
+ }
+ return dbRequest;
+}
+async function readFiles(){
+ const db=await openDB();
+ const store=db.transaction('files','readonly').objectStore('files');
+ const entries=await Promise.all(storedNames.map(name=>new Promise((resolve,reject)=>{
+  const request=store.get(name);
+  request.onsuccess=()=>resolve([name,request.result??null]);
+  request.onerror=()=>reject(request.error);
+ })));
+ return Object.fromEntries(entries);
+}
+async function writeFiles(files){
+ const db=await openDB();
+ await new Promise((resolve,reject)=>{
+  const transaction=db.transaction('files','readwrite');
+  transaction.oncomplete=()=>resolve();
+  transaction.onabort=()=>reject(transaction.error||Error('文件写入失败'));
+  const store=transaction.objectStore('files');
+  for(const [name,text] of Object.entries(files))store.put(text,name);
+  if(Object.hasOwn(files,'place.csv'))store.delete('place.json');
+  if(Object.hasOwn(files,'place.json'))store.delete('place.csv');
+ });
+}
+const placeFilename=files=>files['place.csv']!==null?'place.csv':'place.json';
+const ready=files=>Boolean(files[placeFilename(files)]&&files['calendar.ics']&&files['config.json']);
+function validateFiles(files){
+ if(!ready(files))throw Error('首次导入请选择地点、日历和配置三个文件');
+ const place=placeFilename(files);
+ parseMobilePlaces(place,files[place]);
+ parseAtlasConfig(files['config.json']);
+ const events=parseCalendar(files['calendar.ics']);
+ if(!events.some(event=>Number.isFinite(event.startDate?.toJSDate().getTime())))throw Error('日历没有有效事件');
+}
+
+const routes=new Map(['places','calendar','config'].map(name=>[new URL('api/'+name,base).href,name]));
+window.fetch=async (input,init)=>{
+ const url=new URL(typeof input==='string'||input instanceof URL?input:input.url,base);
+ const route=routes.get(url.href);
+ if(!route)return originalFetch(input,init);
+ if((init?.method||input?.method||'GET').toUpperCase()!=='GET')return new Response(null,{status:405});
+ try{
+  let files;
+  if(importing)files=await getStoredData();
+  else{
+   const name={places:'place.csv',calendar:'calendar.ics',config:'config.json'}[route];
+   const response=await originalFetch(new URL('data/'+name,base),init);
+   if(!response.ok)return response;
+   files={[name]:await response.text()};
   }
-  window.__atlasImport = ui;
-  function ensureButton() {
-    if (document.getElementById('atlas-import-btn')) return;
-    var b = document.createElement('button'); b.id = 'atlas-import-btn'; b.textContent = '导入/更新数据';
-    b.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:9999;padding:9px 12px;border-radius:20px;border:0;background:#2563eb;color:#fff;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.3)';
-    b.onclick = ui; document.body.appendChild(b);
+  if(route==='calendar'){
+   const text=files['calendar.ics'];
+   return text===null?new Response(null,{status:404}):new Response(text,{headers:{'Content-Type':'text/calendar; charset=utf-8'}});
   }
-  function check() {
-    Promise.all([get('place.json'), get('calendar.ics'), get('config.json')]).then(function (a) {
-      var missing = !a[0] || !a[1] || !a[2];
-      ensureButton();
-      if (missing) ui();
-    });
+  if(route==='places'){
+   const name=files['place.csv']!=null?'place.csv':'place.json',text=files[name];
+   return text==null?new Response(null,{status:404}):jsonResponse(parseMobilePlaces(name,text));
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', check); else check();
-})();
+  const text=files['config.json'];
+  return text===null?new Response(null,{status:404}):jsonResponse({...parseAtlasConfig(text),version:'mobile'});
+ }catch(error){
+  return jsonResponse({error:error.message},400);
+ }
+};
+
+function showImport(){
+ if(document.getElementById('atlas-import-card'))return;
+ const wrap=document.createElement('div');
+ wrap.id='atlas-import-card';
+ wrap.style.cssText='position:fixed;inset:0;background:#0008;z-index:99999;display:grid;place-items:center;padding:16px';
+ wrap.innerHTML='<section role="dialog" aria-modal="true" aria-labelledby="atlas-import-title" style="background:#fff;max-width:430px;width:100%;box-sizing:border-box;border-radius:12px;padding:18px;color:#222">'
+  +'<h2 id="atlas-import-title" style="margin:0 0 6px">导入 / 更新数据</h2>'
+  +'<p>首次导入请选择 atlas-data 中的三个文件。以后只需选择要更新的文件。</p>'
+  +'<label>地点 place.csv<input id="imp-place" type="file" accept=".csv,text/csv,.json,application/json"></label>'
+  +'<label>日历 calendar.ics<input id="imp-ics" type="file" accept=".ics,text/calendar"></label>'
+  +'<label>配置 config.json<input id="imp-config" type="file" accept=".json,application/json"></label>'
+  +'<div style="display:flex;gap:8px;margin-top:12px"><button id="imp-go" type="button">导入并进入</button><button id="imp-close" type="button">关闭</button></div>'
+  +'<div id="imp-msg" role="status" style="color:#9a470c;margin-top:8px"></div></section>';
+ document.body.append(wrap);
+ const button=document.getElementById('imp-go'),close=document.getElementById('imp-close'),status=document.getElementById('imp-msg');
+ close.onclick=()=>wrap.remove();
+ button.onclick=async()=>{
+  const [place,calendar,config]=['imp-place','imp-ics','imp-config'].map(id=>document.getElementById(id).files[0]);
+  if(!place&&!calendar&&!config){status.textContent='请选择要导入的文件';return;}
+  button.disabled=close.disabled=true;
+  status.textContent='导入中…';
+  try{
+   const current=await readFiles(),updates={};
+   if(place){
+    const filename=/\.json$/i.test(place.name)?'place.json':'place.csv';
+    updates[filename]=await place.text();
+    current[filename==='place.csv'?'place.json':'place.csv']=null;
+   }
+   if(calendar)updates['calendar.ics']=await calendar.text();
+   if(config)updates['config.json']=await config.text();
+   validateFiles({...current,...updates});
+   await writeFiles(updates);
+   location.reload();
+  }catch(error){
+   status.textContent='导入失败：'+error.message;
+   button.disabled=close.disabled=false;
+  }
+ };
+}
+if(importing){
+ const button=document.createElement('button');
+ button.id='atlas-import-btn';
+ button.textContent='导入/更新数据';
+ button.style.cssText='position:fixed;right:12px;bottom:12px;z-index:9999;border-radius:20px;background:#2563eb;color:#fff';
+ button.onclick=showImport;
+ document.body.append(button);
+ getStoredData().then(files=>{if(!ready(files))showImport();}).catch(showImport);
+}
