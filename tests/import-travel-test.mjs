@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {compareCalendars} from '../calendar-import.js';
-import {isTrip,tripDateRange,tripDetails,tripSelectLabel} from '../travel.js';
+import {isTrip,occurrenceCounts,occurrenceDays,tripDateRange,tripDetails,tripSelectLabel} from '../travel.js';
 
 const calendar=(...records)=>['BEGIN:VCALENDAR','VERSION:2.0',...records,'END:VCALENDAR'].join('\r\n');
 const entry=(uid,title,location,note='',stamp='20260401T100000Z')=>[
@@ -26,11 +26,11 @@ const trip={
  note:'Partner：测试同伴\nPlace：未知地点\n【4/5】\nPlace：地点甲；地点乙\nDay 3\nPlace：地点丙\n【4月8日】\nPlace：地点丁；排除地点',
 };
 assert.ok(isTrip(trip));
-assert.equal(tripSelectLabel({...trip,partners:['甲','乙']}),'合成·2026/04/04-04/08');
+assert.equal(tripSelectLabel({...trip,partners:['甲','乙']}),'合成·26/04/04-04/08');
 assert.equal(tripDateRange('2026-09-24','2026-09-27'),'2026-09-24 至 09-27');
 assert.equal(tripDateRange('2025-12-31','2026-01-01'),'2025-12-31 至 2026-01-01');
 assert.equal(tripSelectLabel({...trip,title:'【测试组】合成之旅（跨年）',start:new Date(2025,11,31),end:new Date(2026,0,2,12)}),
- '合成·2025/12/31-2026/01/02');
+ '合成·25/12/31-26/01/02');
 assert.deepEqual(tripDetails(trip),{
  start:'2026-04-04',end:'2026-04-08',
  days:[
@@ -54,3 +54,22 @@ assert.deepEqual(tripDetails({
  places:['地点乙','地点甲'],
 }).days,[{label:'2026-04-05',number:1,places:['地点乙','地点甲']}]);
 assert.equal(tripDetails({...trip,end:new Date(2026,3,5)}).end,'2026-04-04');
+
+const shortEvent={title:'同日活动',start:new Date(2026,3,5,8),end:new Date(2026,3,5,9),partners:['甲'],places:['地点甲']};
+const repeatedTrip={...trip,partners:['甲'],note:'【4/5】\nPlace：地点甲\n【4/6】\nPlace：地点甲；地点丙'};
+const events=[shortEvent,{...shortEvent,start:new Date(2026,3,5,10)},repeatedTrip];
+const getRows=(split,from=new Date(2026,3,4),to=new Date(2026,3,8,23))=>[...occurrenceDays(events,from,to,split)];
+const people=(rows,merge)=>occurrenceCounts(rows,row=>row.event.partners,merge).get('甲');
+const places=(rows,merge)=>occurrenceCounts(rows,row=>row.places,merge);
+assert.equal(people(getRows(false),false),3);
+assert.equal(people(getRows(false),true),2);
+assert.equal(people(getRows(true),false),7);
+assert.equal(people(getRows(true),true),5);
+assert.equal(places(getRows(true),false).get('地点甲'),4);
+assert.equal(places(getRows(true),true).get('地点甲'),2);
+assert.equal(places(getRows(true),true).get('未知地点'),1);
+const tail=getRows(true,new Date(2026,3,6),new Date(2026,3,8,23));
+assert.equal(tail.length,3);
+assert.equal(people(tail,true),3);
+assert.equal(places(tail,true).get('地点甲'),1);
+assert.equal(places(tail,true).has('未知地点'),false);
