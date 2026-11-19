@@ -8,7 +8,7 @@ const base=new URL('.',location.href);
 const sources={
  places:{name:'place.csv',label:'地点',accept:'.csv,text/csv',parse:parseCSV},
  calendar:{name:'calendar.ics',label:'日历',accept:'.ics,text/calendar',parse:validateCalendar},
- config:{name:'config.json',label:'黑名单配置',accept:'.json,application/json',parse:parseAtlasConfig},
+ config:{name:'config.json',label:'配色与排除规则',accept:'.json,application/json',parse:parseAtlasConfig},
 };
 const names=Object.values(sources).map(source=>source.name);
 const dateKey=name=>'updatedAt:'+name;
