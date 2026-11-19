@@ -31,7 +31,7 @@ export function expand(events,from,to,recurring=true){
    const add=(start,end,item)=>{
     if(start>to||!(end>start?end>from:start>=from))return;
     const entry=metadata(item);
-    entry.details??=details(item);
+    entry.details??={...details(item),allDay:item.startDate.isDate};
     out.push({...entry.details,places:[...entry.details.places],partners:[...entry.details.partners],
      start:new Date(start),end:new Date(end),uid:info.uid,recurring:info.recurring});
    };

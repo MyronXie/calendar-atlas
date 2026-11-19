@@ -15,9 +15,11 @@ await new Promise((resolve,reject)=>reservation.close(error=>error?reject(error)
 
 const dir=await fs.mkdtemp(path.join(os.tmpdir(),'atlas-http-test-'));
 const places=path.join(dir,'synthetic-places.csv');
+const calendar=path.join(dir,'calendar.ics');
 await fs.writeFile(places,'location,lat,lon\r\n');
+await fs.copyFile(new URL('./fixture.ics',import.meta.url),calendar);
 const child=spawn(process.execPath,[fileURLToPath(new URL('../server.mjs',import.meta.url))],{
- env:{...process.env,PORT:String(port),PLACES_PATH:places,CALENDAR_PATH:fileURLToPath(new URL('./fixture.ics',import.meta.url))},
+ env:{...process.env,PORT:String(port),PLACES_PATH:places,CALENDAR_PATH:calendar},
  stdio:['ignore','ignore','pipe'],
 });
 const stopped=once(child,'exit');
@@ -48,6 +50,19 @@ try{
  assert.equal((await read()).places.length,1);
  assert.equal((await save(initial.version)).status,409);
  assert.equal((await save(initial.version,{Origin:'https://example.com'})).status,403);
+ const oldCalendar=await request('/api/calendar');
+ const text=await oldCalendar.text();
+ const version=oldCalendar.headers.get('etag');
+ const newCalendar=text.replace('SUMMARY:Test','SUMMARY:Synthetic update');
+ const saveCalendar=(candidate,tag=version)=>request('/api/calendar',{method:'POST',headers,
+  body:JSON.stringify({version:tag,text:candidate})});
+ assert.equal((await saveCalendar('invalid calendar')).status,400);
+ assert.equal((await saveCalendar(newCalendar)).status,200);
+ assert.equal(await fs.readFile(calendar,'utf8'),newCalendar);
+ assert.equal((await saveCalendar(text)).status,409);
+ const backupDir=path.join(dir,'.backups');
+ const [calendarBackup]= (await fs.readdir(backupDir)).filter(name=>name.startsWith('calendar.ics.'));
+ assert.equal(await fs.readFile(path.join(backupDir,calendarBackup),'utf8'),text);
  for(const route of ['/','/app.js','/basemaps.js','/core.js','/organize.js','/vendor/leaflet.js','/style.css','/api/calendar']){
   const response=await request(route);
   assert.equal(response.status,200,route);

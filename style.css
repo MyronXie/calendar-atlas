@@ -203,6 +203,28 @@ html[data-mobile-source] :is([data-edit-rank], .rule-actions, .quick:has(> #addp
 html[data-mobile-source] [data-rule-toggle]:disabled{cursor:default}
 #atlas-import-card{width:min(430px,94vw)}
 #atlas-import-card .quick{margin-bottom:0}
+.atlas-dialog{width:620px}
+.atlas-dialog-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.atlas-dialog-head h2{margin:0}
+#calendar-preview-body details{border-bottom:1px solid var(--line);padding-bottom:8px}
+#calendar-preview-body ol,.trip-content ol{padding-left:24px;margin-block:8px}
+#calendar-preview-body li,.trip-content li{padding:4px 0}
+.trip-dialog{width:800px}
+#trip-summary{margin-block:8px}
+.trip-day-tabs{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
+.trip-day-tabs button[aria-pressed=true]{border-color:var(--accent);background:var(--soft);font-weight:600}
+.trip-content{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(125px,1fr);gap:14px}
+#trip-map{height:280px;background:var(--canvas);border-radius:6px}
+.trip-pin{background:var(--accent);color:#fff;text-align:center;line-height:20px;border:2px solid #fff;border-radius:50%;font-weight:600}
+.trip-content small{display:inline}
+.eventname{flex-wrap:wrap}
+.event-trip{min-height:24px;font-size:11px;padding:1px 5px;margin-left:4px}
+@media(max-width:650px){
+ .trip-content{grid-template-columns:minmax(0,1fr);gap:5px}
+ #trip-map{height:210px}
+ .app-toolbar{gap:5px;padding-inline:8px}
+ .app-toolbar button{white-space:nowrap;padding-inline:7px}
+}
 @media(max-width:650px){
  .app-toolbar{min-height:50px;z-index:1050}
  :is(#drawer,#settings-drawer){top:50px}
