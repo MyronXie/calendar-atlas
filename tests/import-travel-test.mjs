@@ -44,3 +44,7 @@ const newYear=tripDetails({
 assert.deepEqual(newYear.days.map(({label,number})=>[label,number]),[
  ['2025-12-31',1],['2026-01-01',2],['日期待确认',null],
 ]);
+assert.deepEqual(tripDetails({
+ ...trip,start:new Date(2026,3,5),end:new Date(2026,3,6),allDay:true,
+ places:['地点乙','地点甲'],
+}).days,[{label:'2026-04-05',number:1,places:['地点乙','地点甲']}]);
