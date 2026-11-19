@@ -1,0 +1,22 @@
+# 私人数据（不要提交到公共仓库）
+atlas-data/
+.atlas-data-migration-*/
+user-data/
+mobile-data/
+data/local-reference.json
+reports/*
+!reports/地点维护流程.md
+!reports/名称匹配规则说明.md
+# 生成物
+mobile/
+android/
+# 备份与压缩包
+*.zip
+*.bak
+# 依赖与密钥
+node_modules/
+.env
+*.key
+*.keystore
+*.jks
+debug.keystore.base64.txt

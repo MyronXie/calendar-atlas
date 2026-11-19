@@ -1,0 +1,16 @@
+{
+  "name": "calendar-atlas",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node tests/run.mjs",
+    "audit": "node tools/audit-calendar.mjs",
+    "sync": "node tools/place-sync.mjs",
+    "verify": "node tools/place-verify.mjs",
+    "apply": "node tools/place-apply.mjs",
+    "pending": "node tools/refresh-pending-places.mjs",
+    "build:mobile": "node tools/build-mobile.mjs"
+  }
+}
