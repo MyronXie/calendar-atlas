@@ -1,17 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID,createHash} from 'node:crypto';
-import {parseAtlasConfig,normalizeBlacklist,parseCSV} from './data-formats.js';
+import {parseAtlasConfig,normalizeBlacklist} from './data-formats.js';
 
-const columns=['type','enabled','match_type','value','reason'];
 const version=raw=>createHash('sha256').update(raw).digest('hex');
 export const encodeConfig=({blacklist,emojis})=>JSON.stringify({blacklist,emojis},null,2)+'\n';
-
-export async function readLegacyConfig(dir){
- const [raw,emoji]=await Promise.all(['blacklist.csv','emoji-map.json'].map(name=>fs.readFile(path.join(dir,name),'utf8')));
- const blacklist=parseCSV(raw,columns).places;
- return parseAtlasConfig(JSON.stringify({blacklist,emojis:JSON.parse(emoji.replace(/^\uFEFF/,''))}));
-}
 
 export async function readConfig(dir){
  const raw=await fs.readFile(path.join(dir,'config.json'),'utf8');

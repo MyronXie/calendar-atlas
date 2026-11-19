@@ -4,6 +4,9 @@ atlas-data/
 user-data/
 mobile-data/
 data/local-reference.json
+reports/*
+!reports/地点维护流程.md
+!reports/名称匹配规则说明.md
 # 生成物
 mobile/
 android/

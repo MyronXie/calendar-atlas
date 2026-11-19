@@ -21,10 +21,3 @@ export function parseAtlasConfig(text){
  const blacklist=normalizeBlacklist(rows);
  return {blacklist,emojis,eventRules:blacklist.filter(r=>r.type==='event'),placeRules:blacklist.filter(r=>r.type==='place')};
 }
-
-export function parseMobilePlaces(name,text){
- if(name==='place.csv')return {...parseCSV(text),file:name,version:'mobile'};
- const data=JSON.parse(text.replace(/^\uFEFF/,''));
- if(!Array.isArray(data.places)||!data.places.every(p=>p&&typeof p.location==='string'))throw Error('旧版地点 JSON 格式无效');
- return {...data,file:name,version:'mobile'};
-}

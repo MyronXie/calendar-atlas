@@ -1,22 +1,20 @@
-import {gcjToWgs,shortRegionName} from './organize.js';
+import {gcjToWgs,shortRegionName,geometryPolygons,containsPoint} from './organize.js';
+import {palettes} from './appearance.js';
 
 export const cityKey = (province, city) => province + '|' + city;
 export const mapAttribution = '© OpenStreetMap contributors · ODbL';
 
 const projectionY = lat => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) * 180 / Math.PI;
-function polygons(feature) {
-  const {type,coordinates} = feature.geometry || {};
-  if (type === 'Polygon') return [coordinates];
-  return type === 'MultiPolygon' ? coordinates : [];
-}
+const polygons = feature => geometryPolygons(feature.geometry);
 
 const project = ([lon,lat]) => [lon,projectionY(lat)];
 const wgsPoint = ([lon,lat]) => gcjToWgs(lat,lon).reverse();
 const projectPolygons = (shapes,convert=project) => shapes.map(poly=>poly.map(ring=>ring.map(convert)));
 const projectedPaths = (feature,convert=project) => projectPolygons(polygons(feature),convert);
-// The bundled map also encodes the southern dotted outlines as polygons.
-const nanshaLatitudeLimit = 12.5;
-const withoutNansha = feature => polygons(feature).filter(poly=>poly[0].some(([,lat])=>lat>nanshaLatitudeLimit));
+const southChinaSeaOutline = feature => feature.properties.adcode==='100000_JD';
+const southChinaSeaPoint = (lon,lat) => lat<17.65 || (lon>116.5&&lon<117&&lat>20.5&&lat<21);
+const withoutSouthChinaSea = feature => southChinaSeaOutline(feature)?[]:
+  polygons(feature).filter(poly=>poly[0].some(([lon,lat])=>!southChinaSeaPoint(lon,lat)));
 
 function mapBounds(shapes) {
   let west = Infinity, south = Infinity, east = -Infinity, north = -Infinity;
@@ -60,15 +58,13 @@ function mapFrame(ctx,[west,south,east,north],{x=0,y=0,width,height,padding=0}) 
 
 const mapFont = '"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif';
 const directions = [[0,-1],[1,0],[-1,0],[0,1],[1,-1],[-1,-1],[1,1],[-1,1]];
-function drawMapLabels(ctx,labels,view,{fontSize,leaders=false,offset=0,maxShift=100}) {
+export function layoutMapLabels(labels,view,{offset=0,maxShift=100}={}) {
   const drawn = [], inset = 6;
-  ctx.font = `600 ${fontSize}px ${mapFont}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  for (const {name,x,y,color} of labels) {
-    const w = ctx.measureText(name).width+9, h = fontSize+5;
-    const radii = Array.from({length:Math.floor((maxShift-offset)/10)+1},(_,i)=>offset+i*10);
-    const candidates = radii.flatMap(r=>r===0?[[x,y]]:directions.map(([dx,dy])=>[x+dx*r,y+dy*r]));
+  for (const label of labels) {
+    const {x,y,w,h}=label;
+    const start=label.offset??offset;
+    const radii = Array.from({length:Math.floor((maxShift-start)/10)+1},(_,i)=>start+i*10);
+    const candidates = radii.flatMap(r=>r===0?[[x,y]]:(label.directions||directions).map(([dx,dy])=>[x+dx*r,y+dy*r]));
     const place = candidates.find(([cx,cy])=>{
       const left=cx-w/2, right=cx+w/2, top=cy-h/2, bottom=cy+h/2;
       return left>=view.x+inset&&right<=view.x+view.width-inset&&top>=view.y+inset&&bottom<=view.y+view.height-inset
@@ -76,8 +72,15 @@ function drawMapLabels(ctx,labels,view,{fontSize,leaders=false,offset=0,maxShift
     });
     if (!place) continue;
     const [cx,cy] = place;
-    drawn.push({name,x:cx,y:cy,color,left:cx-w/2,right:cx+w/2,top:cy-h/2,bottom:cy+h/2,anchor:[x,y]});
+    drawn.push({...label,x:cx,y:cy,left:cx-w/2,right:cx+w/2,top:cy-h/2,bottom:cy+h/2,anchor:[x,y]});
   }
+  return drawn;
+}
+function drawMapLabels(ctx,labels,view,{fontSize,leaders=false,offset=0,maxShift=100}) {
+  ctx.font = `600 ${fontSize}px ${mapFont}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const drawn=layoutMapLabels(labels.map(label=>({...label,w:ctx.measureText(label.name).width+9,h:fontSize+5})),view,{offset,maxShift});
   if(leaders)for(const {x,y,anchor:[ax,ay],color} of drawn){
     ctx.beginPath();
     ctx.moveTo(ax,ay);
@@ -99,19 +102,40 @@ function drawMapLabels(ctx,labels,view,{fontSize,leaders=false,offset=0,maxShift
   }
 }
 
-export function drawAnnualMap(canvas, provinces, boundaries, visits, palette, includeNansha=true) {
+export function drawAnnualMap(canvas, provinces, boundaries, visits, palette, includeSouthChinaSea=true, focusVisitedCities=false) {
   const width = 1120, height = 810, padding = 24;
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
   const prepared = provinces.features.map(feature => ({
     name: feature.properties.name, center:feature.properties.center||feature.properties.centroid,
-    paths:projectPolygons(includeNansha?polygons(feature):withoutNansha(feature)),
+    paths:projectPolygons(includeSouthChinaSea?polygons(feature):withoutSouthChinaSea(feature)),
   }));
-  const {trace,point} = mapFrame(ctx,mapBounds(prepared.map(({paths})=>paths)),{width,height,padding});
+  const litCities=(boundaries?.features||[]).flatMap(feature=>{
+    const {name,province,center,centroid}=feature.properties;
+    const key=cityKey(province,name);
+    return visits.cities.has(key)?[{
+      key,name,center:center||centroid,
+      paths:projectPolygons(includeSouthChinaSea?polygons(feature):withoutSouthChinaSea(feature)),
+    }]:[];
+  });
+  const cityPoints=[...visits.cityPoints].filter(([,p])=>includeSouthChinaSea||!southChinaSeaPoint(p.lon,p.lat));
+  const municipalityPaths=prepared.filter(({name})=>visits.cities.has(cityKey(name,name))).map(({paths})=>paths);
+  const focus=focusVisitedCities?mapBounds([...municipalityPaths,...litCities.map(({paths})=>paths),
+    ...cityPoints.map(([,p])=>[[[project([p.lon,p.lat])]]])]):null;
+  const hasFocus=Number.isFinite(focus?.[0]);
+  const frameBounds=hasFocus?focus:mapBounds(prepared.map(({paths})=>paths));
+  if(hasFocus){
+    for(const i of [0,1]){
+      const extra=Math.max(0,.25-(frameBounds[i+2]-frameBounds[i]))/2;
+      frameBounds[i]-=extra;
+      frameBounds[i+2]+=extra;
+    }
+  }
+  const {trace,point} = mapFrame(ctx,frameBounds,{width,height,padding});
   const labels = new Map();
   function labelCity(key,name,center){
-    if(!center||!includeNansha&&center[1]<=nanshaLatitudeLimit)return;
+    if(!center||!includeSouthChinaSea&&southChinaSeaPoint(...center))return;
     const [x,y] = point(...center);
     labels.set(key,{name:shortRegionName(name),x,y,color:palette.dark});
   }
@@ -126,17 +150,14 @@ export function drawAnnualMap(canvas, provinces, boundaries, visits, palette, in
     ctx.fill('evenodd');
     if(visited)labelCity(key,name,center);
   }
-  for (const feature of boundaries?.features || []) {
-    const {name, province, center, centroid} = feature.properties;
-    const key = cityKey(province,name);
-    if (!visits.cities.has(key)) continue;
-    trace(projectPolygons(includeNansha?polygons(feature):withoutNansha(feature)));
+  for (const {key,name,center,paths} of litCities) {
+    trace(paths);
     ctx.fillStyle = palette.accent;
     ctx.fill('evenodd');
     ctx.strokeStyle = palette.soft;
     ctx.lineWidth = 1.1;
     ctx.stroke();
-    labelCity(key,name,center||centroid);
+    labelCity(key,name,center);
   }
   ctx.strokeStyle = palette.accent;
   ctx.lineWidth = 1.2;
@@ -144,8 +165,7 @@ export function drawAnnualMap(canvas, provinces, boundaries, visits, palette, in
     trace(paths);
     ctx.stroke();
   }
-  for (const [key,{lat,lon}] of visits.cityPoints) {
-    if(!includeNansha&&lat<=nanshaLatitudeLimit)continue;
+  for (const [key,{lat,lon}] of cityPoints) {
     ctx.beginPath();
     ctx.arc(...point(lon,lat),4,0,2 * Math.PI);
     ctx.fillStyle = palette.accent;
@@ -158,8 +178,6 @@ export function drawAnnualMap(canvas, provinces, boundaries, visits, palette, in
 }
 
 export const shanghaiName = '上海市';
-export const shanghaiPointColor = '#172033';
-export const shanghaiTopPlaceColor = '#b74200';
 const isChongming = feature => feature.properties.adcode===310151;
 export function shanghaiDistricts(boundaries,includeChongming=true){
   return boundaries.features.filter(feature=>feature.properties.province===shanghaiName&&(includeChongming||!isChongming(feature)));
@@ -172,27 +190,33 @@ export function shanghaiMapPlaces(boundaries,places,includeChongming=true){
   if(!districtPolygons.has(district)){
     districtPolygons.set(district,projectPolygons(polygons(district),wgsPoint));
   }
-  function inside(lon,lat,ring){
-    let hit=false;
-    for(let i=0,j=ring.length-1;i<ring.length;j=i++){
-      const [x,y]=ring[i],[xx,yy]=ring[j];
-      if((y>lat)!==(yy>lat)&&lon<(xx-x)*(lat-y)/(yy-y)+x)hit=!hit;
-    }
-    return hit;
-  }
-  return places.filter(({lon,lat})=>!districtPolygons.get(district).some(([outer,...holes])=>
-    inside(lon,lat,outer)&&!holes.some(ring=>inside(lon,lat,ring))));
+  const rings=districtPolygons.get(district);
+  return places.filter(({lon,lat})=>!containsPoint(rings,lon,lat));
 }
 export function shanghaiMetroLayers(landmarks){
   const metro=landmarks.metro||[];
-  return [
-    ...metro.map(({name,color,lines})=>({name,color,lines})),
-    ...metro.flatMap(({name,color,sharedLines},index)=>sharedLines.length?
-      [{name,color,lines:sharedLines,dashOffset:index%2?6:0}]:[]),
-  ];
+  const layers=metro.flatMap(({name,color,lines,railway})=>railway?[
+    {name,color:'#fff',lines,railway},
+    {name,color,lines,railway,dashArray:[6,6]},
+  ]:[{name,color,lines}]);
+  const sharedPaths=new Map();
+  for(const line of metro){
+    if(!line.sharedLines.length)continue;
+    const key=JSON.stringify(line.sharedLines);
+    if(!sharedPaths.has(key))sharedPaths.set(key,[]);
+    sharedPaths.get(key).push(line);
+  }
+  for(const routes of sharedPaths.values()){
+    const name=routes.map(route=>route.name).join('、')+(routes.length>1?'共线':'');
+    // A solid underlay shows through the second color's dashes on Canvas and SVG.
+    routes.forEach(({color,sharedLines},i)=>layers.push({
+      name,color,lines:sharedLines,shared:true,dashArray:i===0?undefined:[6,6]
+    }));
+  }
+  return layers;
 }
 export function drawShanghaiMap(canvas, boundaries, landmarks, places, {
-  includeChongming=true,innerRing=false,topPlaces=new Set(),
+  includeChongming=true,innerRing=false,topPlaces=new Set(),palette=palettes.green,
 }={}) {
   const width = 1120, height = 547, panelWidth=552;
   canvas.width = width;
@@ -204,7 +228,8 @@ export function drawShanghaiMap(canvas, boundaries, landmarks, places, {
       center:wgsPoint(f.properties.centroid||f.properties.center),
       paths:projectedPaths(f,coordinate=>project(wgsPoint(coordinate))),
     }));
-  const lines = landmarks.features.map(({kind,name,lines})=>({kind,name,lines:lines.map(line=>line.map(project))}));
+  const water = landmarks.waterAreas.map(rings=>rings.map(ring=>ring.map(project)));
+  const lines = landmarks.features.map(feature=>({...feature,lines:feature.lines.map(line=>line.map(project))}));
   const metro=shanghaiMetroLayers(landmarks).map(layer=>({...layer,paths:layer.lines.map(line=>line.map(project))}));
   const main = {x:0,y:0,width:panelWidth,height,padding:16};
   const zoom = {x:width-panelWidth,y:0,width:panelWidth,height,padding:0};
@@ -218,32 +243,41 @@ export function drawShanghaiMap(canvas, boundaries, landmarks, places, {
   ctx.fillStyle = '#fff';
   ctx.fillRect(0,0,width,height);
   function base(frame,viewport,detail) {
-    ctx.fillStyle = '#f1f1f1';
+    ctx.fillStyle = palette.canvas;
     ctx.fillRect(viewport.x,viewport.y,viewport.width,viewport.height);
-    ctx.fillStyle = '#dedede';
-    ctx.strokeStyle = '#bababa';
+    ctx.fillStyle = palette.soft;
+    ctx.strokeStyle = palette.mid;
     ctx.lineJoin = 'round';
     ctx.lineWidth = 1.4;
+    ctx.setLineDash([3,3]);
     for (const {paths} of districts) {
       frame.trace(paths);
       ctx.fill('evenodd');
       ctx.stroke();
     }
-    for (const {kind,name,lines:segments} of lines) {
-      if(!detail&&kind==='road'&&!['延安高架','外环高速','中环路','内环高架','南北高架'].includes(name))continue;
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#a7bdcc';
+    for(const rings of water){
+      frame.trace([rings]);
+      ctx.fill('evenodd');
+    }
+    for (const {name,crossing,lines:segments} of lines) {
+      if(!detail&&!crossing&&!['延安高架','外环高速','中环路','内环高架','南北高架'].includes(name))continue;
       frame.traceLines(segments);
-      if(kind==='road'){
+      if(crossing!=='tunnel'){
         ctx.strokeStyle='#f7f7f7';
         ctx.lineWidth=detail?4.5:2.9;
         ctx.stroke();
       }
-      ctx.strokeStyle=kind==='river'?'#8099a7':'#a1a1a1';
-      ctx.lineWidth=kind==='river'?(name==='黄浦江'?(detail?7:4.2):2.7):(detail?2:1.2);
+      ctx.strokeStyle='#a1a1a1';
+      ctx.lineWidth=detail?2:1.2;
+      if(crossing==='tunnel')ctx.setLineDash([4,3]);
       ctx.stroke();
+      if(crossing==='tunnel')ctx.setLineDash([]);
     }
-    ctx.globalAlpha=.86;
-    for(const {color,paths,dashOffset} of metro){
-      if(dashOffset!==undefined){ctx.setLineDash([6,6]);ctx.lineDashOffset=dashOffset;}
+    for(const {color,paths,shared,railway,dashArray} of metro){
+      ctx.globalAlpha=shared||railway?1:.86;
+      ctx.setLineDash(dashArray||[]);
       frame.traceLines(paths);
       ctx.strokeStyle=color;
       ctx.lineWidth=detail?2:2.55;
@@ -259,7 +293,7 @@ export function drawShanghaiMap(canvas, boundaries, landmarks, places, {
       const highlighted = topPlaces.has(name);
       ctx.beginPath();
       ctx.arc(x,y,highlighted?radius+1.4:radius,0,2 * Math.PI);
-      ctx.fillStyle = highlighted?shanghaiTopPlaceColor:shanghaiPointColor;
+      ctx.fillStyle = highlighted?palette.highlight:palette.accent;
       ctx.fill();
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 2.2;
@@ -338,6 +372,13 @@ export function drawAnnualImage(canvas, report, nationalMap, shanghaiMap, palett
     ctx.font = `${weight} ${size}px ${font}`;
     ctx.fillText(value,x,y);
   }
+  function textWithBoldNumbers(value,x,y,size) {
+    for (const [index,part] of value.split(/(\d+)/).entries()) {
+      if(!part)continue;
+      text(part,x,y,size,palette.dark,index%2?700:400);
+      x+=ctx.measureText(part).width;
+    }
+  }
   function fit(value,maxWidth) {
     if (ctx.measureText(value).width <= maxWidth) return value;
     const chars = Array.from(value);
@@ -360,7 +401,7 @@ export function drawAnnualImage(canvas, report, nationalMap, shanghaiMap, palett
   if(report.dates)text(report.dates,margin,130,25);
   const nationalY=153+dateOffset;
   text('全国足迹：',margin,nationalY,31,palette.dark,700);
-  text(report.coverage,margin+ctx.measureText('全国足迹：').width,nationalY,23);
+  textWithBoldNumbers(report.coverage,margin+ctx.measureText('全国足迹：').width,nationalY,23);
   [palette.soft,palette.mid,palette.accent].forEach((color,i) => {
     const x = width - margin - 435 + i * 145;
     ctx.fillStyle = color;
@@ -370,13 +411,13 @@ export function drawAnnualImage(canvas, report, nationalMap, shanghaiMap, palett
   ctx.drawImage(nationalMap,margin,nationalY+24,inner,nationalHeight);
   let y = nationalY + 24 + nationalHeight + 54;
   text('上海足迹：',margin,y,31,palette.dark,700);
-  text(report.shanghaiCoverage,margin+ctx.measureText('上海足迹：').width,y,23);
+  textWithBoldNumbers(report.shanghaiCoverage,margin+ctx.measureText('上海足迹：').width,y,23);
   ctx.textAlign = 'right';
-  text(mapAttribution,width-margin,y,17,'#555');
+  text(mapAttribution,width-margin,y,14,palette.muted);
   ctx.textAlign = 'left';
   ctx.drawImage(shanghaiMap,margin,y+23,inner,shanghaiHeight);
   y += shanghaiHeight + 56;
-  if(report.shanghaiNote){text(report.shanghaiNote,margin,y-7,21,'#555');y+=noteOffset;}
+  if(report.shanghaiNote){text(report.shanghaiNote,margin,y-7,21,palette.muted);y+=noteOffset;}
   statsRow(report.stats,y);
   y += 126;
   text(report.monthTitle,margin,y,30,palette.dark,700);
@@ -385,7 +426,7 @@ export function drawAnnualImage(canvas, report, nationalMap, shanghaiMap, palett
   if(report.highlight){
     ctx.beginPath();
     ctx.arc(rankingX+7,y-10,7,0,2*Math.PI);
-    ctx.fillStyle=shanghaiTopPlaceColor;
+    ctx.fillStyle=palette.highlight;
     ctx.fill();
   }
   text('常去地点 Top 5',rankingX+(report.highlight?24:0),y,30,palette.dark,700);
@@ -403,9 +444,10 @@ export function drawAnnualImage(canvas, report, nationalMap, shanghaiMap, palett
   });
   (report.top.length ? report.top : [['—','']]).forEach(([name,total],i) => {
     const lineY = y + 45 + i * 42;
-    ctx.font = '23px ' + font;
+    const weight=i===0&&report.top.length?600:400;
+    ctx.font = `${weight} 23px ${font}`;
     const nameWidth=width-margin-rankingX-62;
-    text(fit(name,nameWidth),rankingX,lineY,23);
+    text(fit(name,nameWidth),rankingX,lineY,23,palette.dark,weight);
     ctx.textAlign = 'right';
     text(total,width - margin,lineY,23,palette.dark,700);
     ctx.textAlign = 'left';

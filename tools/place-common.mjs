@@ -1,7 +1,7 @@
 // Shared helpers for place workflows (Amap + Baidu + matching).
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
-import {ensureAtlasData} from '../atlas-data.mjs';
+import {atlasDataDirectory} from '../atlas-data.mjs';
 import {fileURLToPath} from 'node:url';
 import {parseCSV, stringifyCSV} from '../csv-store.mjs';
 const root = new URL('../', import.meta.url);
@@ -24,10 +24,14 @@ export async function amapText(keyword, adcode) {
   }
   return [];
 }
-export async function amapAround(lon, lat, radius = 80) {
+export async function amapAroundTypes(lon, lat, radius = 3000, types = '110000|150000') {
   if (!KEY) return [];
   const d = 300 - (Date.now() - lastA); if (d > 0) await new Promise(r => setTimeout(r, d)); lastA = Date.now();
-  try { const res = await fetch(`https://restapi.amap.com/v3/place/around?key=${KEY}&location=${lon.toFixed(6)},${lat.toFixed(6)}&radius=${radius}&offset=10&page=1&extensions=base`, { signal: AbortSignal.timeout(8000) }); const j = await res.json(); if (j.status !== '1') return []; return (j.pois || []).filter(p => p.name && p.location).map(p => { const [plon, plat] = p.location.split(',').map(Number); return { src: 'amap-around', name: p.name, address: p.address || '', lat: plat, lon: plon, dist: dist([lat, lon], [plat, plon]) }; }); } catch (e) { return []; }
+  try { const res = await fetch(`https://restapi.amap.com/v3/place/around?key=${KEY}&location=${lon.toFixed(6)},${lat.toFixed(6)}&radius=${radius}&types=${types}&offset=25&page=1&extensions=base`, { signal: AbortSignal.timeout(8000) }); const j = await res.json(); if (j.status !== '1') return []; return (j.pois || []).filter(p => p.name && p.location).map(p => { const [plon, plat] = p.location.split(',').map(Number); return { name: p.name, address: p.address || '', adcode: p.adcode || '', type: p.type || '', lat: plat, lon: plon, dist: dist([lat, lon], [plat, plon]) }; }); } catch { return []; }
+}
+export async function amapAround(lon, lat, radius = 80) {  if (!KEY) return [];
+  const d = 300 - (Date.now() - lastA); if (d > 0) await new Promise(r => setTimeout(r, d)); lastA = Date.now();
+  try { const res = await fetch(`https://restapi.amap.com/v3/place/around?key=${KEY}&location=${lon.toFixed(6)},${lat.toFixed(6)}&radius=${radius}&offset=10&page=1&extensions=base`, { signal: AbortSignal.timeout(8000) }); const j = await res.json(); if (j.status !== '1') return []; return (j.pois || []).filter(p => p.name && p.location).map(p => { const [plon, plat] = p.location.split(',').map(Number); return { src: 'amap-around', name: p.name, address: p.address || '', adcode: p.adcode || '', lat: plat, lon: plon, dist: dist([lat, lon], [plat, plon]) }; }); } catch { return []; }
 }
 export async function baiduText(keyword, cityCode = 289) {
   const d = 1200 - (Date.now() - lastB); if (d > 0) await new Promise(r => setTimeout(r, d)); lastB = Date.now();
@@ -35,9 +39,9 @@ export async function baiduText(keyword, cityCode = 289) {
     const res = await fetch('https://map.baidu.com/?qt=s&wd=' + encodeURIComponent(keyword) + '&c=' + cityCode + '&rn=10', { signal: AbortSignal.timeout(9000) });
     if (!res.ok) return []; const j = await res.json(); const raw = Array.isArray(j.content) ? j.content : [];
     return raw.filter(p => p.name && p.geo && p.addr).map(p => { const m = p.geo.split('|').at(-1).match(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/); if (!m) return null; const [lon, lat] = gc.transform([+m[1], +m[2]], gc.BD09MC, gc.GCJ02); const vis = JSON.stringify([p.name, p.show_tag, p.ext_display, p.title_status, p.business_status, p.shop_status]); const closed = vis.match(/永久关闭|已停业|已关闭|已歇业/); return { src: 'baidu', name: p.name, address: (p.area_name || '') + p.addr, lat: +lat.toFixed(7), lon: +lon.toFixed(7), closed: closed ? closed[0] : '' }; }).filter(Boolean);
-  } catch (e) { return []; }
+  } catch { return []; }
 }
-const placesURL=async rel=>rel?new URL(rel,root):new URL('place.csv',await ensureAtlasData());
+const placesURL=async rel=>rel?new URL(rel,root):new URL('place.csv',atlasDataDirectory());
 export async function loadPlaces(rel) { return parseCSV(await fs.readFile(await placesURL(rel), 'utf8')); }
 export async function savePlaces(db, rel) {
   const f = fileURLToPath(await placesURL(rel)); const raw = await fs.readFile(f, 'utf8'); const out = stringifyCSV(db);
@@ -53,6 +57,16 @@ export function parseDateYY(s) { const m = String(s || '').match(/^(\d{2})\/(\d{
 export const daysBetween = (a, b) => Math.round((b - a) / 86400000);
 export const rootURL = root;
 // OSM Photon (non-domestic, free) — for overseas verification
+export async function regeoRegion(lon, lat) {
+  if (!KEY || !Number.isFinite(+lon) || !Number.isFinite(+lat)) return null;
+  try { const r = await fetch(`https://restapi.amap.com/v3/geocode/regeo?key=${KEY}&location=${(+lon).toFixed(6)},${(+lat).toFixed(6)}&extensions=base`, { signal: AbortSignal.timeout(8000) }); const j = await r.json(); if (j.status !== '1' || !j.regeocode) return null; const a = j.regeocode.addressComponent || {}; const str = v => Array.isArray(v) ? '' : (v || ''); return { prov: str(a.province), city: str(a.city), district: str(a.district), adcode: str(a.adcode) }; } catch { return null; }
+}
+export function composeAddress(region, address) {
+  const addr = String(address || ''); if (!region || !region.prov) return addr; const { prov, city, district } = region; const mid = (city && city !== prov ? city : '');
+  if (addr.startsWith(prov)) return addr;
+  if (district && addr.startsWith(district)) return prov + mid + addr;
+  return prov + mid + (district || '') + addr;
+}
 const PHH = { 'User-Agent': 'calendar-atlas-verify/1.0' };
 export async function photonReverse(lat, lon) {
   try { const r = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&limit=1`, { signal: AbortSignal.timeout(12000), headers: PHH }); const j = await r.json(); const f = (j.features || [])[0]; if (!f) return null; const [flon, flat] = f.geometry.coordinates; return { name: f.properties?.name || '', cc: f.properties?.countrycode || '', osm: (f.properties?.osm_key || '') + '/' + (f.properties?.osm_value || ''), lat: flat, lon: flon, dist: dist([lat, lon], [flat, flon]) }; } catch { return null; }
