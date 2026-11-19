@@ -62,26 +62,55 @@ const files = ['index.html', 'app.js', 'data-provider.js', 'mobile-readonly.js',
 if (!DATA_LESS) files.push(...atlasFiles.map(name=>'data/'+name));
 const hash=createHash('sha256');
 for(const file of [...files,...optionalAssets])hash.update(file+'\0').update(await fs.readFile(path.join(out,file))).update('\0');
-const cache='atlas-'+hash.digest('hex').slice(0,16);
-const sw = `const CACHE=${JSON.stringify(cache)};const FILES=${JSON.stringify(files)};const OPTIONAL=${JSON.stringify(optionalAssets)};
-self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()));});
-self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('atlas-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
+const version=hash.digest('hex').slice(0,16);
+const sw = `const VERSION=${JSON.stringify(version)};const FILES=${JSON.stringify(files)};const OPTIONAL=${JSON.stringify(optionalAssets)};
+const scope=new URL(self.registration.scope);
+const entry=new URL('index.html',scope);
+const prefix='calendar-atlas:'+scope.href+':';
+const CACHE=prefix+VERSION;
+const isEntry=url=>url.origin===scope.origin&&(url.pathname===scope.pathname||url.pathname===entry.pathname);
+
+self.addEventListener('install',e=>{
+  e.waitUntil((async()=>{
+    const cache=await caches.open(CACHE);
+    // Fresh releases cannot reuse an older HTTP-cached response for the same asset URL.
+    await cache.addAll(FILES.map(file=>new Request(new URL(file,scope),{cache:'reload'})));
+    await self.skipWaiting();
+  })());
+});
+self.addEventListener('activate',e=>{
+  e.waitUntil((async()=>{
+    let legacyCache=false;
+    for(const key of await caches.keys()){
+      if(key.startsWith(prefix)&&key!==CACHE)await caches.delete(key);
+      else if(/^atlas-[a-f0-9]{16}$/.test(key)&&await (await caches.open(key)).match(entry)){
+        await caches.delete(key);
+        legacyCache=true;
+      }
+    }
+    await self.clients.claim();
+    if(legacyCache){
+      // The old pages have no controllerchange handler. Move them to the new shell once.
+      for(const client of await self.clients.matchAll({type:'window'})){
+        if(isEntry(new URL(client.url)))void client.navigate(client.url).catch(()=>{});
+      }
+    }
+  })());
+});
 self.addEventListener('fetch',e=>{
   const url=new URL(e.request.url);
-  if(e.request.method!=='GET'||url.origin!==location.origin)return;
+  if(e.request.method!=='GET'||url.origin!==scope.origin||!url.pathname.startsWith(scope.pathname))return;
   e.respondWith((async()=>{
     const cache=await caches.open(CACHE);
-    const cached=await cache.match(e.request);
+    const request=e.request;
+    const cached=await cache.match(request.mode==='navigate'&&isEntry(url)?entry:request);
     if(cached)return cached;
-    try{
-      const response=await fetch(e.request);
-      const relative=url.pathname.slice(new URL(self.registration.scope).pathname.length);
-      if(response.ok && (OPTIONAL.includes(relative)||relative.startsWith('data/cities/'))){
-        await cache.put(e.request,response.clone()).catch(()=>{});
-      }
-      return response;
+    const response=await fetch(request);
+    const relative=url.pathname.slice(scope.pathname.length);
+    if(response.ok && (OPTIONAL.includes(relative)||relative.startsWith('data/cities/'))){
+      await cache.put(request,response.clone()).catch(()=>{});
     }
-    catch(error){if(e.request.mode==='navigate')return await cache.match('index.html')||Response.error();throw error;}
+    return response;
   })());
 });`;
 await fs.writeFile(path.join(out, 'sw.js'), sw);
