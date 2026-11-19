@@ -91,6 +91,7 @@ for(const [i,stamp] of ['20251230T235900','20251231T000000','20260101T235959','2
 }
 calendar.push('END:VCALENDAR');
 await document.getElementById('ics').onchange({target:{files:[{text:async()=>calendar.join('\r\n')+'\r\n',lastModified:1}],value:''}});
+document.getElementById('calendar-preview-only').onclick();
 await document.getElementById('annual').onclick();
 assert.equal(editExpense.textContent,'38.50');
 annualMode.onclick();

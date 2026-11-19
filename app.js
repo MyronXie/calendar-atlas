@@ -7,6 +7,8 @@ import {selectEmoji} from './emoji.js';
 import {placeTypes,placeIndex,regionFromAddress} from './place-categories.js';
 import {parseCalendar,expand,details,escape as E,validCoord} from './core.js';
 import {applyRules,gcjToWgs,normalizePlace,isPlaceExcluded,shortRegionName,geometryPolygons,containsPoint} from './organize.js';
+import {compareCalendars} from './calendar-import.js';
+import {isTrip,tripDetails} from './travel.js';
 const sourceTimeIds = {calendar:'cal-version', places:'place-version', blacklist:'blacklist-version'};
 const mobileSource=document.documentElement?.dataset?.mobileSource;
 const mobileImport=mobileSource==='import';
@@ -103,7 +105,7 @@ function renderRank(){
  $('ranking').querySelectorAll('[data-rank-name]').forEach(el=>{el.onclick=()=>setEntityFilter(field,el.dataset.rankName);el.onkeydown=e=>{if(e.target&&e.target!==el)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();setEntityFilter(field,el.dataset.rankName);}};});
  $('ranking').querySelectorAll('[data-rank-eye]').forEach(el=>el.onclick=e=>{e.stopPropagation();rankHidden[field]=toggleRankHidden(rankHidden[field],el.dataset.rankEye);try{localStorage.setItem('atlas-rank-hidden-v1',JSON.stringify(rankHidden));}catch{}renderRank();});
 }
-function renderEvents(){const rows=filtered;$('eventtitle').textContent='事件 · '+rows.length;const showPlaces=$('showplaces').checked,showPeople=$('showpeople').checked;$('events').classList.toggle('hide-places',!showPlaces);$('events').classList.toggle('hide-people',!showPeople);$('events').innerHTML=rows.slice(0,limit).map((e,i)=>{const key=(e.uid||e.title)+'|'+e.start.toISOString(),open=openNotes.has(key);return '<article class="event"><div class="eventrow"><button class="event-time" data-note="'+i+'" aria-expanded="'+open+'" aria-controls="eventnote-'+i+'" title="查看原始备注"><time>'+e.start.toLocaleDateString('zh-CN')+' '+e.start.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})+'</time></button><div class="eventname"><button class="eventtitle" data-filter-event="'+E(e.title)+'" title="按组别与事件筛选">'+E(e.title)+'</button></div><div class="eventplaces"'+(showPlaces?'':' hidden')+'>'+e.places.map(n=>'<button class="entitylink" data-filter-place="'+E(n)+'" aria-pressed="'+activeCriteria.some(c=>c.id===criterion('place',n).id)+'">'+E(n)+'</button>').join('')+'</div><div class="eventpeople"'+(showPeople?'':' hidden')+'>'+e.partners.map(n=>'<button class="entitylink" data-filter-person="'+E(n)+'" aria-pressed="'+activeCriteria.some(c=>c.id===criterion('person',n).id)+'">'+E(n)+'</button>').join('')+'</div></div><div class="eventnote" id="eventnote-'+i+'"'+(open?'':' hidden')+'>'+E(e.note||'无备注')+'</div></article>';}).join('')||'<div class="empty">无事件</div>';$('more').hidden=rows.length<=limit;$('events').querySelectorAll('[data-note]').forEach(el=>el.onclick=()=>{const e=rows[+el.dataset.note],key=(e.uid||e.title)+'|'+e.start.toISOString();if(openNotes.has(key))openNotes.delete(key);else openNotes.add(key);renderEvents();});$('events').querySelectorAll('[data-filter-place]').forEach(el=>el.onclick=()=>{setEntityFilter('places',el.dataset.filterPlace);});$('events').querySelectorAll('[data-filter-person]').forEach(el=>el.onclick=()=>{setEntityFilter('partners',el.dataset.filterPerson);});$('events').querySelectorAll('[data-filter-event]').forEach(el=>el.onclick=()=>{activeCriteria=eventCriteria(activeCriteria,el.dataset.filterEvent);refresh();fitPoints();});renderFilterChips();}
+function renderEvents(){const rows=filtered;$('eventtitle').textContent='事件 · '+rows.length;const showPlaces=$('showplaces').checked,showPeople=$('showpeople').checked;$('events').classList.toggle('hide-places',!showPlaces);$('events').classList.toggle('hide-people',!showPeople);$('events').innerHTML=rows.slice(0,limit).map((e,i)=>{const key=(e.uid||e.title)+'|'+e.start.toISOString(),open=openNotes.has(key);return '<article class="event"><div class="eventrow"><button class="event-time" data-note="'+i+'" aria-expanded="'+open+'" aria-controls="eventnote-'+i+'" title="查看原始备注"><time>'+e.start.toLocaleDateString('zh-CN')+' '+e.start.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})+'</time></button><div class="eventname"><button class="eventtitle" data-filter-event="'+E(e.title)+'" title="按组别与事件筛选">'+E(e.title)+'</button>'+(isTrip(e)?'<button class="event-trip" data-trip-event="'+i+'">按天查看</button>':'')+'</div><div class="eventplaces"'+(showPlaces?'':' hidden')+'>'+e.places.map(n=>'<button class="entitylink" data-filter-place="'+E(n)+'" aria-pressed="'+activeCriteria.some(c=>c.id===criterion('place',n).id)+'">'+E(n)+'</button>').join('')+'</div><div class="eventpeople"'+(showPeople?'':' hidden')+'>'+e.partners.map(n=>'<button class="entitylink" data-filter-person="'+E(n)+'" aria-pressed="'+activeCriteria.some(c=>c.id===criterion('person',n).id)+'">'+E(n)+'</button>').join('')+'</div></div><div class="eventnote" id="eventnote-'+i+'"'+(open?'':' hidden')+'>'+E(e.note||'无备注')+'</div></article>';}).join('')||'<div class="empty">无事件</div>';$('more').hidden=rows.length<=limit;$('events').querySelectorAll('[data-note]').forEach(el=>el.onclick=()=>{const e=rows[+el.dataset.note],key=(e.uid||e.title)+'|'+e.start.toISOString();if(openNotes.has(key))openNotes.delete(key);else openNotes.add(key);renderEvents();});$('events').querySelectorAll('[data-filter-place]').forEach(el=>el.onclick=()=>{setEntityFilter('places',el.dataset.filterPlace);});$('events').querySelectorAll('[data-filter-person]').forEach(el=>el.onclick=()=>{setEntityFilter('partners',el.dataset.filterPerson);});$('events').querySelectorAll('[data-filter-event]').forEach(el=>el.onclick=()=>{activeCriteria=eventCriteria(activeCriteria,el.dataset.filterEvent);refresh();fitPoints();});$('events').querySelectorAll('[data-trip-event]').forEach(el=>el.onclick=()=>openTrips(rows[+el.dataset.tripEvent]));renderFilterChips();}
 function renderFilterChips(){
  const draft=$('search').value.trim(), container=$('activefilters');
  container.innerHTML=activeCriteria.map((c,i)=>{
@@ -127,7 +129,66 @@ async function writeCSV(updates,version=csvVersion){const r=await fetch('api/pla
 for(const key of ['address','lat','lon','datum'])$('editform').elements[key].addEventListener('change',fillAddressRegions);$('editform').elements.address.addEventListener('input',fillAddressRegions);for(const key of ['country','province','city'])$('editform').elements[key].addEventListener('input',()=>{regionAuto[key]=null;});
 $('editform').onsubmit=async e=>{e.preventDefault();const p=Object.fromEntries(new FormData(e.target));if(p.valid!=='no'){const ov=e.target.dataset.origValid||'';p.valid=(ov&&ov!=='no')?ov:'';}$('saveplace').disabled=true;$('editerror').textContent='';try{await writeCSV([p],editingVersion);$('editor').close();}catch(err){$('editerror').textContent=err.message;}finally{$('saveplace').disabled=false;}};
 $('cancel').onclick=()=>$('editor').close();
-$('ics').onchange=async e=>{try{const file=e.target.files[0];load(await file.text());showDataTime('calendar',file.lastModified);}catch{alert('日历解析失败，请检查 ICS 格式');}e.target.value='';};
+let calendarPreviewBusy=false;
+$('calendar-preview-close').onclick=()=>$('calendar-preview').close();
+$('calendar-preview').oncancel=event=>{if(calendarPreviewBusy)event.preventDefault();};
+$('ics').onchange=async event=>{
+ const file=event.target.files[0];
+ event.target.value='';
+ if(!file||mobileSource)return;
+ const dialog=$('calendar-preview'),status=$('calendar-preview-status'),body=$('calendar-preview-body');
+ const inspect=$('calendar-preview-only'),save=$('calendar-preview-save'),close=$('calendar-preview-close');
+ body.innerHTML='';
+ inspect.disabled=save.disabled=true;
+ status.textContent='正在核对日历…';
+ if(!dialog.open)dialog.showModal();
+ try{
+  const [text,response]=await Promise.all([file.text(),fetch('api/calendar',{cache:'no-store'})]);
+  if(!response.ok&&response.status!==404)throw Error('无法读取本地日历');
+  const current=response.ok?await response.text():'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n';
+  const version=response.headers?.get('ETag');
+  const result=compareCalendars(current,text,name=>baseCoords.has(normalizePlace(name)));
+  const eventText=record=>[record.start.slice(0,10),record.title,
+   ...(record.addedPlaces?.length?['新增地点 '+record.addedPlaces.join('、')]:[]),
+   ...(record.addedPartners?.length?['新增同伴 '+record.addedPartners.join('、')]:[])].filter(Boolean).join(' · ');
+  const sections=[
+   ['新增事件',result.added,eventText],
+   ['更新事件',result.changed,eventText],
+   ['本次文件未包含',result.missing,eventText],
+   ['地点库未匹配',result.unmatched,name=>name],
+  ];
+  body.innerHTML=sections.map(([label,rows],i)=>'<details data-preview-section="'+i+'"><summary>'+label+
+   ' <strong>'+rows.length+'</strong></summary><ol></ol></details>').join('');
+  body.querySelectorAll('[data-preview-section]').forEach(section=>section.ontoggle=()=>{
+   if(!section.open)return;
+   const [,rows,format]=sections[Number(section.dataset.previewSection)];
+   const list=section.querySelector('ol');
+   if(!list.childElementCount)list.innerHTML=rows.map(row=>'<li>'+E(format(row))+'</li>').join('');
+  });
+  status.textContent=result.missing.length
+   ?file.name+' · 替换后，当前文件独有的 '+result.missing.length+' 条事件只会保留在备份中。'
+   :file.name+' · 核对后可选择查看或替换。';
+  inspect.disabled=false;
+  save.disabled=!version;
+  inspect.onclick=()=>{load(text);dialog.close();};
+  save.onclick=async()=>{
+   calendarPreviewBusy=true;
+   save.disabled=inspect.disabled=close.disabled=true;
+   try{
+    const saved=await fetch('api/calendar',{method:'POST',
+     headers:{'Content-Type':'application/json','X-Atlas-Write':'1'},body:JSON.stringify({version,text})});
+    if(!saved.ok)throw Error((await saved.json()).error||'替换日历失败');
+    load(text,true);
+    await updateDataTimes(['calendar']);
+    status.textContent='本地日历已替换。原文件备份保存在 atlas-data/.backups。';
+   }catch(error){
+    status.textContent=error.message;
+    inspect.disabled=false;
+    save.disabled=false;
+   }finally{calendarPreviewBusy=false;close.disabled=false;}
+  };
+ }catch(error){status.textContent=error.message||'无法读取日历';}
+};
 function buildPoints(){const level=mapLevel();const m=new Map();for(const e of filtered){const seen=new Set();for(const name of e.places){const p=pos(name);if(!p)continue;const label=level==='place'?name:p[level];const key=level==='city'?[p.country,p.province,p.city].join('|'):label;if(!label||seen.has(key))continue;seen.add(key);let center=p;if(level!=='place'){center=gaz.find(x=>x[level]===label&&x.precision===level&&(level!=='city'||x.province===p.province))||p;}if(!m.has(key))m.set(key,{...center,name:label,regionKey:key,count:0,names:new Set(),eventTitles:[]});const v=m.get(key);v.count++;v.names.add(name);v.eventTitles.push(e.title);}}points=[...m.values()];}
 function fitPoints(){
  if(mapLevel()==='shanghai')return;
@@ -802,6 +863,81 @@ function reviewEvents(from,to){
  const events=expand(source,from,to,$('recurring').checked).events;
  return applyRules(events,rules,$('exclude').checked).events.filter(event=>event.start>=from&&event.start<=to);
 }
+let tripEvents=[],tripMap,tripMarkers;
+function renderTripDay(day){
+ const list=$('trip-locations'),canvas=$('trip-map');
+ if(tripMarkers)tripMarkers.clearLayers();
+ const locations=(day?.places||[]).map(name=>({name,position:pos(name)}));
+ const points=[];
+ list.innerHTML=locations.map(({name,position})=>{
+  const located=position?.precision==='exact';
+  return '<li>'+E(name)+(located?'':' <small>未定位</small>')+'</li>';
+ }).join('');
+ locations.forEach(({name,position},index)=>{
+  if(position?.precision==='exact'&&validCoord(position))points.push({name,number:index+1,coord:[position.lat,position.lon]});
+ });
+ canvas.hidden=!points.length;
+ $('trip-status').textContent=!locations.length?'这一天暂无地点记录。':!points.length?'这一天暂无已定位的地点。':'';
+ if(!points.length)return;
+ if(!tripMap){
+  tripMap=L.map('trip-map',{zoomAnimation:false,scrollWheelZoom:false}).setView(points[0].coord,14);
+  const {url,options}=basemaps.osm;
+  L.tileLayer(url,{maxZoom:18,...options}).addTo(tripMap);
+  tripMarkers=L.layerGroup().addTo(tripMap);
+ }
+ for(const {name,number,coord} of points){
+  const icon=L.divIcon({className:'trip-pin',html:String(number),iconSize:[24,24],iconAnchor:[12,12]});
+  L.marker(coord,{icon,alt:name}).bindTooltip(E(name),{direction:'top'}).addTo(tripMarkers);
+ }
+ tripMap.invalidateSize({pan:false});
+ tripMap.fitBounds(points.map(point=>point.coord),{padding:[24,24],maxZoom:15,animate:false});
+}
+function renderTrip(event){
+ const title=$('trip-title'),summary=$('trip-summary'),tabs=$('trip-day-tabs');
+ title.textContent=event?.title||'行程';
+ if(!event){
+  summary.innerHTML='';
+  tabs.innerHTML='';
+  renderTripDay(null);
+  $('trip-status').textContent='日历里没有识别到「××之旅」事件。';
+  return;
+ }
+ const {start,end,days}=tripDetails(event);
+ summary.textContent=(start===end?start:start+' 至 '+end)
+  +(event.partners.length?' · 同伴 '+event.partners.join('、'):'');
+ tabs.innerHTML=days.map(({label},i)=>'<button type="button" data-trip-day="'+i+'" aria-pressed="'+(i===0)+'">'+E(label)+'</button>').join('');
+ for(const button of tabs.querySelectorAll('[data-trip-day]')){
+  button.onclick=()=>{
+   for(const other of tabs.querySelectorAll('[data-trip-day]'))other.setAttribute('aria-pressed',String(button===other));
+   renderTripDay(days[Number(button.dataset.tripDay)]);
+  };
+ }
+ renderTripDay(days[0]);
+}
+function openTrips(selected){
+ ensureTimeline();
+ tripEvents=timelineEvents.filter(isTrip);
+ let index=selected?tripEvents.findIndex(event=>event.uid===selected.uid&&+event.start===+selected.start):0;
+ if(index<0){
+  tripEvents=[selected,...tripEvents];
+  index=0;
+ }
+ const choice=$('trip-choice');
+ $('trip-choice-label').hidden=!tripEvents.length;
+ choice.innerHTML=tripEvents.map((event,i)=>'<option value="'+i+'">'+E(event.title+' · '+event.start.toLocaleDateString('zh-CN'))+'</option>').join('');
+ choice.value=String(index);
+ const dialog=$('trip-dialog');
+ if(!dialog.open)dialog.showModal();
+ renderTrip(tripEvents[index]);
+}
+$('trips').onclick=()=>openTrips();
+$('trip-choice').onchange=()=>renderTrip(tripEvents[Number($('trip-choice').value)]);
+$('trip-close').onclick=()=>$('trip-dialog').close();
+$('trip-dialog').onclose=()=>{
+ if($('trip-dialog').open)return;
+ if(tripMap)tripMap.remove();
+ tripMap=tripMarkers=null;
+};
 function summarizeReview(events){
  const days=new Set(),places=new Map(),partners=new Set();
  for(const event of events){
