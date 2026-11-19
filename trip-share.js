@@ -67,6 +67,7 @@ export async function captureTripMap(map,layer){
 
 function drawRouteMap(ctx,{points,lines,overview,mapImage},palette,top){
  const height=contentWidth,margin=58;
+ const radius=21,spacing=44;
  const latitudes=points.map(point=>point.coord[0]);
  const longitudes=points.map(point=>point.coord[1]);
  const south=Math.min(...latitudes),north=Math.max(...latitudes);
@@ -86,10 +87,10 @@ function drawRouteMap(ctx,{points,lines,overview,mapImage},palette,top){
  const badgesByCoordinate=new Map(points.map(({coord,badges})=>{
   const [x,y]=project(coord);
   const columns=Math.min(8,badges.size),rows=Math.ceil(badges.size/columns);
-  const startX=Math.max(padding+16,Math.min(x-(columns-1)*14,padding+contentWidth-16-(columns-1)*28));
-  const startY=Math.max(top+16,Math.min(y-(rows-1)*14,top+height-16-(rows-1)*28));
+  const startX=Math.max(padding+radius+3,Math.min(x-(columns-1)*spacing/2,padding+contentWidth-radius-3-(columns-1)*spacing));
+  const startY=Math.max(top+radius+3,Math.min(y-(rows-1)*spacing/2,top+height-radius-3-(rows-1)*spacing));
   const marks=new Map([...badges].map(([number,color],i)=>[number,{
-   color,x:startX+(i%columns)*28,y:startY+Math.floor(i/columns)*28,
+   color,x:startX+(i%columns)*spacing,y:startY+Math.floor(i/columns)*spacing,
   }]));
   return [coord.join(','),marks];
  }));
@@ -100,10 +101,13 @@ function drawRouteMap(ctx,{points,lines,overview,mapImage},palette,top){
  ctx.clip();
  ctx.fillStyle=palette.soft;
  ctx.fillRect(padding,top,contentWidth,height);
- if(mapImage)ctx.drawImage(mapImage.image,padding,top,contentWidth,height);
- ctx.lineWidth=4;
+ if(mapImage){
+  ctx.imageSmoothingQuality='high';
+  ctx.drawImage(mapImage.image,padding,top,contentWidth,height);
+ }
+ ctx.lineWidth=5;
  ctx.lineJoin='round';
- if(lines.length)ctx.setLineDash([8,6]);
+ if(lines.length)ctx.setLineDash([10,7]);
  for(const {route,color,number} of lines){
   ctx.strokeStyle=color;
   ctx.beginPath();
@@ -118,18 +122,18 @@ function drawRouteMap(ctx,{points,lines,overview,mapImage},palette,top){
  ctx.setLineDash([]);
  ctx.textAlign='center';
  ctx.textBaseline='middle';
- ctx.font=font(15,700);
+ ctx.font=font(24,700);
  for(const marks of badgesByCoordinate.values()){
   for(const [number,{x,y,color}] of marks){
    ctx.beginPath();
-   ctx.arc(x,y,13,0,2*Math.PI);
+   ctx.arc(x,y,radius,0,2*Math.PI);
    ctx.fillStyle=color;
    ctx.fill();
    ctx.strokeStyle='#fff';
-   ctx.lineWidth=2;
+   ctx.lineWidth=3;
    ctx.stroke();
    ctx.fillStyle='#fff';
-   ctx.fillText(number,x,y,22);
+   ctx.fillText(number,x,y,36);
   }
  }
  if(mapImage){
