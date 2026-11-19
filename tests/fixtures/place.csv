@@ -1,0 +1,4 @@
+location,address,lat,lon,country,province,city,datum,valid,type,labels,aliases
+测试公园甲,上海市测试地址,31.23,121.47,中国,上海市,上海市,wgs84,,out,户外,测试公园旧称
+测试博物馆乙,北京市测试地址,39.9,116.4,中国,北京市,北京市,wgs84,,art,文化,
+测试历史地点丙,测试地址,31.2,121.4,中国,上海市,上海市,wgs84,no,other,,

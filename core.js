@@ -8,6 +8,56 @@ const clean=t=>t.trim();const isNoise=t=>/^(?:&|＆|\.{2,}|…+|等|等(?:几|�
 const split=(text,person)=>{text=withoutParentheses(text,!person).replace(/\.{3,}|…+/g,' ').replace(/等(?:几|数|若干|[一二三四五六七八九十百两0-9]+)?(?:人|位)/g,' ');const result=[];let token='',depth=0,quote=null;const Q={'"':'"','“':'”','「':'」','『':'』'};for(let i=0;i<text.length;i++){const c=text[i];if(quote){if(c===quote)quote=null;else token+=c;continue;}if(Q[c]){quote=Q[c];continue;}if(c==='('||c==='（')depth++;else if(c===')'||c==='）')depth=Math.max(0,depth-1);const separator=depth===0&&(/[,，;；、|&＆]/.test(c)||(/\s/.test(c)&&(person||/[\u3400-\u9fff]/.test(token)||/[\u3400-\u9fff]/.test(text.slice(i+1).trimStart()[0]||''))));if(separator){if(clean(token)&&!isNoise(clean(token)))result.push(clean(token));token='';}else token+=c;}if(clean(token)&&!isNoise(clean(token)))result.push(clean(token));return result;};
 const partners=[],places=[String(event.location||'').trim()];for(const line of desc.split('\n')){if(/[【】]/.test(line))continue;const m=line.match(/^\s*(Partner|Place)\s*[:：]\s*(.*)$/i);if(!m)continue;if(m[1].toLowerCase()==='partner')partners.push(...split(m[2],true));else places.push(...split(m[2],false));}
 return {title:event.summary||'未命名事件',note:desc,partners:unique(partners),places:unique(places)};}
-export function expand(events,from,to,recurring=true){const out=[];let capped=false;let errors=0;for(const e of events){if(String(e.component.getFirstPropertyValue('status')).toUpperCase()==='CANCELLED')continue;try{const add=(start,end,event)=>{const s=start.toJSDate(), t=end?.toJSDate()||s; if(s<=to && (t>s?t>from:s>=from))out.push({...details(event),start:s,end:t,uid:e.uid,recurring:e.isRecurring()});};if(e.isRecurring()&&recurring){const it=e.iterator();let n=0;while(n++<100000){const d=it.next();if(!d)break;if(d.toJSDate()>to)break;const o=e.getOccurrenceDetails(d);if(String(o.item.component.getFirstPropertyValue('status')).toUpperCase()!=='CANCELLED')add(o.startDate,o.endDate,o.item);}if(n>=100000)capped=true;}else add(e.startDate,e.endDate,e);}catch{errors++;}}return {events:out.sort((a,b)=>b.start-a.start),capped,errors};}
+const expansionMetadata=new WeakMap();
+function metadata(event){
+ let info=expansionMetadata.get(event);
+ if(!info){
+  info={
+   uid:event.uid,recurring:event.isRecurring(),
+   cancelled:String(event.component.getFirstPropertyValue('status')).toUpperCase()==='CANCELLED'
+  };
+  expansionMetadata.set(event,info);
+ }
+ return info;
+}
+
+export function expand(events,from,to,recurring=true){
+ const out=[];
+ let capped=false,errors=0;
+ for(const event of events){
+  try{
+   const info=metadata(event);
+   if(info.cancelled)continue;
+   const add=(start,end,item)=>{
+    if(start>to||!(end>start?end>from:start>=from))return;
+    const entry=metadata(item);
+    entry.details??=details(item);
+    out.push({...entry.details,places:[...entry.details.places],partners:[...entry.details.partners],
+     start:new Date(start),end:new Date(end),uid:info.uid,recurring:info.recurring});
+   };
+   if(!info.recurring||!recurring){
+    if(!info.start){
+     const start=event.startDate.toJSDate();
+     const end=event.endDate?.toJSDate()||start;
+     Object.assign(info,{start,end});
+    }
+    add(info.start,info.end,event);
+    continue;
+   }
+   const iterator=event.iterator();
+   let attempts=0;
+   while(attempts++<100000){
+    const next=iterator.next();
+    if(!next||next.toJSDate()>to)break;
+    const occurrence=event.getOccurrenceDetails(next);
+    if(metadata(occurrence.item).cancelled)continue;
+    const start=occurrence.startDate.toJSDate();
+    add(start,occurrence.endDate?.toJSDate()||start,occurrence.item);
+   }
+   if(attempts>=100000)capped=true;
+  }catch{errors++;}
+ }
+ return {events:out.sort((a,b)=>b.start-a.start),capped,errors};
+}
 export const escape=s=>String(s??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
 export function validCoord(p){return p&&p.lat!==''&&p.lon!==''&&Number.isFinite(Number(p.lat))&&Number.isFinite(Number(p.lon))&&Math.abs(Number(p.lat))<=90&&Math.abs(Number(p.lon))<=180;}
