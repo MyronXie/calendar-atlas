@@ -8,6 +8,13 @@ import {placeTypes,placeIndex,regionFromAddress} from './place-categories.js';
 import {parseCalendar,expand,details,escape as E,validCoord} from './core.js';
 import {applyRules,gcjToWgs,normalizePlace,isPlaceExcluded,shortRegionName,geometryPolygons,containsPoint} from './organize.js';
 const sourceTimeIds = {calendar:'cal-version', places:'place-version', blacklist:'blacklist-version'};
+const mobileSource=document.documentElement?.dataset?.mobileSource;
+const mobileImport=mobileSource==='import';
+const importTypes={
+ calendar:{label:'日历',accept:'.ics,text/calendar',route:'calendar'},
+ places:{label:'地点',accept:'.csv,text/csv',route:'places'},
+ blacklist:{label:'黑名单配置',accept:'.json,application/json',route:'config'},
+};
 const reviewMapOptions={focusVisitedCities:false,includeSouthChinaSea:true,includeChongming:true,innerRing:false};
 const shanghaiLayerOptions={boundaries:true,roads:true,metro:false,landmarks:false};
 try{
@@ -254,7 +261,7 @@ try{const pref=JSON.parse(localStorage.getItem('atlas-event-columns')||'{}');$('
 
 function setupReference(){baseCoords=placeIndex(reference.places,normalizePlace);$('referenceinfo').textContent=(reference.file||'place.csv')+' · '+reference.places.length+' 条';$('datum').value=localStorage.getItem('atlas-datum-v2')||'gcj02';}
 async function readConfigFiles(){const r=await fetch('api/config',{cache:'no-store'});if(!r.ok)throw Error('配置读取失败');const d=await r.json();rules=d;emojiConfig=d.emojis;configVersion=d.version;}
-function renderBlacklist(){const all=rules.blacklist||[],type=$('blacklist-type').value||'all',q=$('blacklist-search').value.toLowerCase();$('blacklist-summary').textContent='config.json · '+all.length+' 条';$('blacklist-rows').innerHTML=all.map((r,i)=>({r,i})).filter(({r})=>(type==='all'||r.type===type)&&(!q||[r.value,r.reason,r.type].join(' ').toLowerCase().includes(q))).map(({r,i})=>'<div class="blacklist-row '+(r.enabled==='0'?'off':'')+'"><label class="check"><input type="checkbox" data-rule-toggle="'+i+'" '+(r.enabled!=='0'?'checked':'')+(blacklistBusy?' disabled':'')+' aria-label="启用此规则"><span class="rule-type">'+(r.type==='event'?'事件':'地点')+'</span></label><div class="rule-body"><b>'+E(r.value)+'</b><small>'+({contains:'包含关键词',exact:'完整名称',uid:'事件 UID'}[r.match_type]||r.match_type)+'</small></div><div class="rule-actions"><button data-rule-edit="'+i+'" '+(blacklistBusy?'disabled':'')+' title="编辑规则" aria-label="编辑规则">✎</button><button data-rule-delete="'+i+'" '+(blacklistBusy?'disabled':'')+' title="删除规则" aria-label="删除规则">🗑</button></div></div>').join('')||'<div class="empty">没有匹配规则</div>';$('blacklist-rows').querySelectorAll('[data-rule-toggle]').forEach(el=>el.onchange=async()=>{const rows=structuredClone(rules.blacklist);rows[+el.dataset.ruleToggle].enabled=el.checked?'1':'0';await persistBlacklist(rows);});$('blacklist-rows').querySelectorAll('[data-rule-edit]').forEach(el=>el.onclick=()=>editBlacklist(+el.dataset.ruleEdit));$('blacklist-rows').querySelectorAll('[data-rule-delete]').forEach(el=>el.onclick=async()=>{const rows=rules.blacklist.filter((r,i)=>i!==+el.dataset.ruleDelete);await persistBlacklist(rows);});}
+function renderBlacklist(){const all=rules.blacklist||[],type=$('blacklist-type').value||'all',q=$('blacklist-search').value.toLowerCase();$('blacklist-summary').textContent='config.json · '+all.length+' 条';$('blacklist-rows').innerHTML=all.map((r,i)=>({r,i})).filter(({r})=>(type==='all'||r.type===type)&&(!q||[r.value,r.reason,r.type].join(' ').toLowerCase().includes(q))).map(({r,i})=>'<div class="blacklist-row '+(r.enabled==='0'?'off':'')+'"><label class="check"><input type="checkbox" data-rule-toggle="'+i+'" '+(r.enabled!=='0'?'checked':'')+(blacklistBusy||mobileSource?' disabled':'')+' aria-label="启用此规则"><span class="rule-type">'+(r.type==='event'?'事件':'地点')+'</span></label><div class="rule-body"><b>'+E(r.value)+'</b><small>'+({contains:'包含关键词',exact:'完整名称',uid:'事件 UID'}[r.match_type]||r.match_type)+'</small></div><div class="rule-actions"><button data-rule-edit="'+i+'" '+(blacklistBusy||mobileSource?'disabled':'')+' title="编辑规则" aria-label="编辑规则">✎</button><button data-rule-delete="'+i+'" '+(blacklistBusy||mobileSource?'disabled':'')+' title="删除规则" aria-label="删除规则">🗑</button></div></div>').join('')||'<div class="empty">没有匹配规则</div>';$('blacklist-rows').querySelectorAll('[data-rule-toggle]').forEach(el=>el.onchange=async()=>{const rows=structuredClone(rules.blacklist);rows[+el.dataset.ruleToggle].enabled=el.checked?'1':'0';await persistBlacklist(rows);});$('blacklist-rows').querySelectorAll('[data-rule-edit]').forEach(el=>el.onclick=()=>editBlacklist(+el.dataset.ruleEdit));$('blacklist-rows').querySelectorAll('[data-rule-delete]').forEach(el=>el.onclick=async()=>{const rows=rules.blacklist.filter((r,i)=>i!==+el.dataset.ruleDelete);await persistBlacklist(rows);});}
 async function persistBlacklist(rows,version=configVersion){if(blacklistBusy)return false;blacklistBusy=true;$('blacklist-error').textContent='';renderBlacklist();try{const response=await fetch('api/config',{method:'POST',headers:{'Content-Type':'application/json','X-Atlas-Write':'1'},body:JSON.stringify({version,blacklist:rows})});const d=await response.json();if(!response.ok)throw Error(d.error||'黑名单保存失败');rules=d;emojiConfig=d.emojis;configVersion=d.version;timelineKey='';refresh();updateDataTimes(['blacklist']);return true;}catch(e){$('blacklist-error').textContent=e.message;return false;}finally{blacklistBusy=false;renderBlacklist();}}
 function editBlacklist(index=-1){blacklistEditing=index;blacklistEditVersion=configVersion;const r=rules.blacklist?.[index]||{type:$('blacklist-type').value==='place'?'place':'event',enabled:'1',match_type:'contains',value:'',reason:''};const f=$('blacklist-form');for(const k of ['type','match_type','value','reason'])f.elements[k].value=r[k]||'';f.elements.enabled.checked=r.enabled!=='0';$('blacklist-editor-title').textContent=index<0?'新增规则':'编辑规则';$('blacklist-form-error').textContent='';$('blacklist-editor').showModal();}
 $('blacklist-form').onsubmit=async e=>{e.preventDefault();const f=e.target;const r={type:f.elements.type.value,enabled:f.elements.enabled.checked?'1':'0',match_type:f.elements.match_type.value,value:f.elements.value.value,reason:f.elements.reason.value};if(r.type==='place'&&r.match_type==='uid'){$('blacklist-form-error').textContent='UID 仅适用于事件';return;}$('save-blacklist').disabled=true;try{const rows=structuredClone(rules.blacklist||[]);if(blacklistEditing<0)rows.push(r);else rows[blacklistEditing]=r;if(await persistBlacklist(rows,blacklistEditVersion))$('blacklist-editor').close();else $('blacklist-form-error').textContent=$('blacklist-error').textContent;}finally{$('save-blacklist').disabled=false;}};
@@ -452,7 +459,7 @@ function drawOverview(){
 $('provider').onchange=()=>setProvider();map.on('zoomend',()=>{if(mapLevel()!=='place')renderRegionLabels();});map.on('moveend',()=>{if(mapLevel()!=='place')renderRegionLabels();});if($('heatmap'))$('heatmap').onchange=()=>draw();if($('aggregate'))$('aggregate').onchange=()=>draw();document.querySelectorAll('.unit-toggle [data-unit]').forEach(b=>b.onclick=()=>{$('timeunit').value=b.dataset.unit;document.querySelectorAll('.unit-toggle [data-unit]').forEach(x=>x.classList.toggle('active',x===b));syncYears();});
 function drawer(open){document.body.classList.toggle('drawer-closed',!open);$('toggle-drawer').setAttribute('aria-expanded',String(open));setTimeout(()=>map.invalidateSize(),180);}$('toggle-drawer').onclick=()=>drawer(document.body.classList.contains('drawer-closed'));$('close-drawer').onclick=()=>drawer(false);
 if(typeof matchMedia==='function'&&matchMedia('(max-width:650px)').matches)drawer(false);
-function renderPlaces(){const q=$('placesearch').value.toLowerCase(),state=$('placestate').value||'all';const pendingAllowed=state==='pending'?new Set(applyRules(source.map(e=>({...details(e),uid:e.uid,start:e.startDate?.toJSDate()||new Date(0)})),rules,true).events.flatMap(e=>e.places).map(n=>normalizePlace(baseCoords.get(normalizePlace(n))?.location||n))):null;const names=[...new Set([...reference.places.map(p=>p.location),...source.flatMap(e=>details(e).places).map(n=>baseCoords.get(normalizePlace(n))?.location||n)])].sort((a,b)=>a.localeCompare(b,'zh-CN'));const lookupCSV=baseCoords;const rows=names.map(name=>{const row=lookupCSV.get(normalizePlace(name)),p=pos(name),disabled=isClosed(row?.valid);return {name,row,p,disabled};}).filter(({name,row,p,disabled})=>(!q||[name,row?.address,row?.type,placeTypes[row?.type],row?.labels,row?.aliases].join(' ').toLowerCase().includes(q))&&(state==='all'?!isPlaceExcluded(row||{location:name},rules):(state==='closed'?disabled:state==='pending'?!p&&pendingAllowed.has(normalizePlace(name))&&!isPlaceExcluded(row||{location:name},rules):state==='exact'?p?.precision==='exact':p&&p.precision!=='exact')));$('placelist').innerHTML=rows.slice(0,placeLimit).map(({name,row,p,disabled})=>'<button class="placeitem" data-edit="'+E(name)+'" title="'+E(row?.address||name)+'">'+(row?.type?'<span class="place-type type-icon" title="'+E((placeTypes[row.type]||row.type))+'" aria-label="'+E(placeTypes[row.type]||row.type)+'">'+E(emojiConfig.typeEmojis?.[row.type]||'📍')+'</span>':'')+'<b>'+E(name)+'</b>'+(disabled?'<span class="closed-badge" title="已停业" aria-label="已停业">🔒</span>':'')+'<span class="place-coordinates">'+E(coordinateLabel(validCoord(row)?row:p?.precision==='exact'?p:null))+'</span>'+'</button>').join('')||'<div class="empty">无匹配地点</div>';$('placelist').querySelectorAll('[data-edit]').forEach(el=>el.onclick=()=>edit(el.dataset.edit));$('placemore').hidden=rows.length<=placeLimit;}
+function renderPlaces(){const q=$('placesearch').value.toLowerCase(),state=$('placestate').value||'all';const pendingAllowed=state==='pending'?new Set(applyRules(source.map(e=>({...details(e),uid:e.uid,start:e.startDate?.toJSDate()||new Date(0)})),rules,true).events.flatMap(e=>e.places).map(n=>normalizePlace(baseCoords.get(normalizePlace(n))?.location||n))):null;const names=[...new Set([...reference.places.map(p=>p.location),...source.flatMap(e=>details(e).places).map(n=>baseCoords.get(normalizePlace(n))?.location||n)])].sort((a,b)=>a.localeCompare(b,'zh-CN'));const lookupCSV=baseCoords;const rows=names.map(name=>{const row=lookupCSV.get(normalizePlace(name)),p=pos(name),disabled=isClosed(row?.valid);return {name,row,p,disabled};}).filter(({name,row,p,disabled})=>(!q||[name,row?.address,row?.type,placeTypes[row?.type],row?.labels,row?.aliases].join(' ').toLowerCase().includes(q))&&(state==='all'?!isPlaceExcluded(row||{location:name},rules):(state==='closed'?disabled:state==='pending'?!p&&pendingAllowed.has(normalizePlace(name))&&!isPlaceExcluded(row||{location:name},rules):state==='exact'?p?.precision==='exact':p&&p.precision!=='exact')));$('placelist').innerHTML=rows.slice(0,placeLimit).map(({name,row,p,disabled})=>(mobileSource?'<div class="placeitem"':'<button class="placeitem" data-edit="'+E(name)+'"')+' title="'+E(row?.address||name)+'">'+(row?.type?'<span class="place-type type-icon" title="'+E((placeTypes[row.type]||row.type))+'" aria-label="'+E(placeTypes[row.type]||row.type)+'">'+E(emojiConfig.typeEmojis?.[row.type]||'📍')+'</span>':'')+'<b>'+E(name)+'</b>'+(disabled?'<span class="closed-badge" title="已停业" aria-label="已停业">🔒</span>':'')+'<span class="place-coordinates">'+E(coordinateLabel(validCoord(row)?row:p?.precision==='exact'?p:null))+'</span>'+(mobileSource?'</div>':'</button>')).join('')||'<div class="empty">无匹配地点</div>';$('placelist').querySelectorAll('[data-edit]').forEach(el=>el.onclick=()=>edit(el.dataset.edit));$('placemore').hidden=rows.length<=placeLimit;}
 $('placesearch').oninput=$('placestate').onchange=()=>{placeLimit=100;renderPlaces();};$('placemore').onclick=()=>{placeLimit+=100;renderPlaces();};$('addplace').onclick=()=>edit();$('reloadplaces').onclick=async()=>{try{await reloadSource('places');}catch(e){$('status').textContent=e.message;}};
 setInterval(async()=>{if(document.documentElement?.dataset?.mobile==='1'||$('editor').open||$('blacklist-editor').open||blacklistBusy||document.hidden)return;try{const r=await fetch('api/places');if(!r.ok)return;const d=await r.json();let configChanged=false;const cr=await fetch('api/config');if(cr.ok){const c=await cr.json();if(c.version!==configVersion){rules=c;emojiConfig=c.emojis;configVersion=c.version;timelineKey='';configChanged=true;renderBlacklist();}}if(d.version!==csvVersion||configChanged){csvVersion=d.version;reference.places=d.places;setupReference();cache.clear();refresh();}}catch{}},15000);
 
@@ -526,19 +533,46 @@ async function reloadSource(key){
  }
  await updateDataTimes([key]);
 }
-document.querySelectorAll('[data-meta]').forEach(button=>button.onclick=async()=>{
- const label=button.getAttribute('aria-label');
- const status=$('meta-status');
- button.disabled=true;
- status.textContent=label+'中…';
- try{
-  await reloadSource(button.dataset.meta);
-  status.textContent=label+'成功';
- }catch(error){
-  status.textContent=label+'失败：'+error.message;
- }finally{
-  button.disabled=false;
+document.querySelectorAll('[data-meta]').forEach(button=>{
+ const key=button.dataset.meta;
+ const {label:sourceLabel,accept,route}=importTypes[key];
+ const label=mobileImport?'更新'+sourceLabel:button.getAttribute('aria-label');
+ async function update(file){
+  const status=$('meta-status');
+  button.disabled=true;
+  status.textContent=label+'中…';
+  try{
+   if(file){
+    const result=await fetch('api/'+route,{method:'PUT',body:await file.text()});
+    if(!result.ok)throw Error((await result.json()).error||'文件保存失败');
+   }
+   await reloadSource(key);
+   status.textContent=label+'成功';
+  }catch(error){
+   status.textContent=label+'失败：'+error.message;
+  }finally{
+   button.disabled=false;
+  }
  }
+ if(!mobileImport){
+  button.onclick=()=>update();
+  return;
+ }
+ const input=document.createElement('input');
+ input.type='file';
+ input.accept=accept;
+ input.hidden=true;
+ input.dataset.upload=key;
+ input.onchange=()=>{
+  const file=input.files[0];
+  input.value='';
+  if(file)void update(file);
+ };
+ button.after(input);
+ button.textContent='+';
+ button.title=label;
+ button.setAttribute('aria-label',label);
+ button.onclick=()=>input.click();
 });
 
 async function loadCityBoundaries(){
@@ -1146,7 +1180,7 @@ async function startAtlas(){
  if(places.status==='rejected')missing.push('地点');
  if(!calendarReady)missing.push('日历');
  if(missing.length)$('status').textContent=missing.join('、')+'读取失败';
- if(document.documentElement?.dataset?.mobile!=='1')void updateDataTimes();
+ if(!mobileSource||mobileImport)void updateDataTimes();
  if(calendarReady){
   if(typeof requestAnimationFrame==='function'&&!document.hidden){
    await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
