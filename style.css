@@ -3,7 +3,7 @@
 [hidden]{display:none!important}
 body{margin:0;font:14px/1.5 'Segoe UI','Microsoft YaHei',sans-serif;--accent:#4d7147;--soft:#e9f1e4;--mid:#a7bea0;--deep:#223c28;--canvas:#f3f6f0;--line:#dae4d7;--muted:#596d5e;--highlight:#d16b3f;--radius:5px;--control-height:34px;--control-font:13px;--row-font:13px;--heading-font:19px;background:var(--canvas);color:var(--muted)}
 button,input,select,textarea{font:inherit;color:var(--muted)}
-h2,h3,.drawerhead b,.annual-stat b{color:var(--deep)}
+h2,h3,.annual-stat b{color:var(--deep)}
 button{min-height:var(--control-height);padding:6px 11px;border:1px solid var(--line);border-radius:var(--radius);background:#fff;font-size:var(--control-font);line-height:1.5;cursor:pointer}
 button:hover{background:var(--soft);border-color:var(--mid)}
 button:disabled{opacity:.5;cursor:not-allowed}
@@ -28,8 +28,7 @@ body{--drawer-width:390px;--drawer-padding:16px}
 aside{position:fixed;inset:0 auto 0 0;width:var(--drawer-width);display:flex;flex-direction:column;background:#fff;border-right:1px solid var(--line);overflow:hidden;z-index:1000;transition:transform .18s,visibility .18s}
 .drawer-top{flex:none;background:#fff;padding:var(--drawer-padding) var(--drawer-padding) 0;border-bottom:1px solid var(--line)}
 .drawer-scroll{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:0 var(--drawer-padding) var(--drawer-padding)}
-.drawerhead{min-height:42px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:12px}.drawerhead b{font-size:16px;font-weight:600}
-.drawertabs,.settings-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:8px 0 14px}
+.drawertabs,.settings-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:0 0 12px}
 .drawertabs{grid-template-columns:repeat(4,minmax(0,1fr))}
 .drawertabs button,.settings-tabs button{min-width:0;padding:7px 3px;border-color:transparent;white-space:nowrap;font-size:13px}
 .drawertabs button.active,.settings-tabs button.active{background:var(--soft);color:var(--accent);font-weight:600}
@@ -46,6 +45,7 @@ body.settings-open main{margin-right:var(--drawer-width)}
 #settings-drawer{inset:0 0 0 auto;border-left:1px solid var(--line);border-right:0;transform:translateX(100%);visibility:hidden}
 body.settings-open #settings-drawer{transform:translateX(0);visibility:visible}
 .app-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 14px;position:sticky;top:0;z-index:900;background:var(--canvas)}
+.app-toolbar button[aria-expanded=true]{background:var(--soft);border-color:var(--mid);color:var(--accent);font-weight:600}
 /* All three content sections use the same surface and title. */
 .mapcard,.timeline-main,.events{margin:14px;background:#fff;border:1px solid var(--line);border-radius:7px;overflow:hidden}
 .mapbar,.timelinehead,.eventhead{display:flex;align-items:center;gap:12px;min-height:56px;padding:10px 16px}

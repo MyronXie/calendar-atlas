@@ -44,14 +44,14 @@ await fs.copyFile(path.join(root, 'tools', 'mobile-readonly.js'), path.join(out,
 // index.html: manifest + (data-less) data-provider + read-only shim
 let html = await rd('index.html');
 const defaultCanvas=palettes.green.canvas;
-html = html.replace('<title>日历地图</title>', '<title>日历地图</title><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="'+defaultCanvas+'">');
+html = html.replace('</title>', '</title><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="'+defaultCanvas+'">');
 html = html.replace('<html lang="zh-CN">', '<html lang="zh-CN" data-mobile-source="'+(DATA_LESS?'import':'files')+'">');
 html = html.replace('<script type="module" src="app.js"></script>', '<script type="module" src="data-provider.js"></script><script type="module" src="app.js"></script>');
 html = html.replace('</body>', '<script type="module" src="mobile-readonly.js"></script></body>');
 await fs.writeFile(path.join(out, 'index.html'), html);
 
 await fs.writeFile(path.join(out, 'manifest.webmanifest'), JSON.stringify({
-  name: '日历足迹（只读）', short_name: '足迹', start_url: './', display: 'standalone',
+  name: '日历足迹', short_name: '日历足迹', start_url: './', display: 'standalone',
   background_color: defaultCanvas, theme_color: defaultCanvas, lang: 'zh-CN', icons: appIcons
 }, null, 2));
 

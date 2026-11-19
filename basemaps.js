@@ -13,7 +13,7 @@ export const basemaps={
   options:{attribution:osmCredit}
  },
  opentopo:{
-  label:'OpenTopoMap 地形',url:'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+  label:'OpenTopoMap',url:'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
   options:{subdomains:'abc',maxNativeZoom:16,attribution:osmCredit+' · SRTM · <a href="https://opentopomap.org/">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA</a>)'}
  }
 };

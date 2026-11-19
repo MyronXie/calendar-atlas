@@ -13,7 +13,7 @@ const mobileImport=mobileSource==='import';
 const importTypes={
  calendar:{label:'日历',accept:'.ics,text/calendar',route:'calendar'},
  places:{label:'地点',accept:'.csv,text/csv',route:'places'},
- blacklist:{label:'配色',accept:'.json,application/json',route:'config'},
+ blacklist:{label:'配置',accept:'.json,application/json',route:'config'},
 };
 const reviewMapOptions={focusVisitedCities:false,includeSouthChinaSea:true,includeChongming:true,innerRing:false};
 const shanghaiLayerOptions={boundaries:true,roads:true,metro:false,landmarks:false};
@@ -485,7 +485,7 @@ function drawOverview(){
 }
 $('provider').onchange=()=>setProvider();map.on('zoomend',()=>{if(mapLevel()!=='place')renderRegionLabels();});map.on('moveend',()=>{if(mapLevel()!=='place')renderRegionLabels();});if($('heatmap'))$('heatmap').onchange=()=>draw();if($('aggregate'))$('aggregate').onchange=()=>draw();document.querySelectorAll('.unit-toggle [data-unit]').forEach(b=>b.onclick=()=>{$('timeunit').value=b.dataset.unit;document.querySelectorAll('.unit-toggle [data-unit]').forEach(x=>x.classList.toggle('active',x===b));syncYears();});
 const narrowDrawers=typeof matchMedia==='function'?matchMedia('(max-width:1280px)'):null;
-let rankDrawerOpen=true, drawerResizeTimer;
+let rankDrawerOpen=true, lastOpenedDrawer='rank', drawerResizeTimer;
 function resizeMapForDrawers(){
  clearTimeout(drawerResizeTimer);
  drawerResizeTimer=setTimeout(()=>map.invalidateSize(),180);
@@ -497,12 +497,17 @@ function drawer(open,restoreFocus=true){
  $('drawer').inert=!open;
  $('drawer').setAttribute('aria-hidden',String(!open));
  $('toggle-drawer').setAttribute('aria-expanded',String(open));
- if(open)renderRank();
+ if(open){
+  lastOpenedDrawer='rank';
+  renderRank();
+ }
  resizeMapForDrawers();
- if(restoreFocus)$(open?'close-drawer':'toggle-drawer').focus?.({preventScroll:true});
+ if(restoreFocus){
+  const button=(open&&$('drawer').querySelector('.drawertabs .active'))||$('toggle-drawer');
+  button.focus?.({preventScroll:true});
+ }
 }
 $('toggle-drawer').onclick=()=>drawer(!rankDrawerOpen);
-$('close-drawer').onclick=()=>drawer(false);
 if(typeof matchMedia==='function'&&matchMedia('(max-width:650px)').matches)drawer(false,false);
 narrowDrawers?.addEventListener?.('change',event=>{
  if(event.matches&&rankDrawerOpen&&settingsOpen)drawer(false,false);
@@ -551,18 +556,23 @@ for(const key of ['map','timeline','eventlist']){$('collapse-'+key).onclick=()=>
 function settingsDrawer(open,restoreFocus=true){
  if(open&&narrowDrawers?.matches&&rankDrawerOpen)drawer(false,false);
  settingsOpen=open;
+ if(open)lastOpenedDrawer='settings';
  if(open&&activePanel==='manage')renderPlaces();
  document.body.classList.toggle('settings-open',open);
  $('settings-drawer').inert=!open;
  $('settings-drawer').setAttribute('aria-hidden',String(!open));
  $('toggle-settings').setAttribute('aria-expanded',String(open));
  resizeMapForDrawers();
- if(restoreFocus)$(open?'close-settings':'toggle-settings').focus?.({preventScroll:true});
+ if(restoreFocus){
+  const button=(open&&$('settings-drawer').querySelector('.settings-tabs .active'))||$('toggle-settings');
+  button.focus?.({preventScroll:true});
+ }
 }
 $('toggle-settings').onclick=()=>settingsDrawer(!settingsOpen);
-$('close-settings').onclick=()=>settingsDrawer(false);
 document.addEventListener?.('keydown',e=>{
- if(e.key==='Escape'&&settingsOpen&&!$('editor').open&&!$('blacklist-editor').open)settingsDrawer(false);
+ if(e.key!=='Escape'||document.querySelector('dialog[open],.annual-overlay:not([hidden])'))return;
+ if(settingsOpen&&(!rankDrawerOpen||lastOpenedDrawer==='settings'))settingsDrawer(false);
+ else if(rankDrawerOpen)drawer(false);
 });
 
 function showDataTime(key,value){
