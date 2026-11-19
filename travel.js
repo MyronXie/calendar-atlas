@@ -57,7 +57,7 @@ export function tripDetails(event){
  }
  for(const place of event.places||[])if(!assigned.has(place))add(null,place);
  const days=[...groups].filter(([key])=>key!==null).sort(([a],[b])=>a-b)
-  .map(([key,places])=>({label:isoDay(key),places}));
- if(groups.has(null))days.push({label:'日期待确认',places:groups.get(null)});
+  .map(([key,places])=>({label:isoDay(key),number:(key-first)/dayMs+1,places}));
+ if(groups.has(null))days.push({label:'日期待确认',number:null,places:groups.get(null)});
  return {start:isoDay(first),end:isoDay(last),days};
 }
