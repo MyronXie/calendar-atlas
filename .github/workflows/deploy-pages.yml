@@ -1,0 +1,49 @@
+name: deploy-pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: calendar-atlas-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build mobile web app
+        run: node tools/build-mobile.mjs --data-less
+      - name: Check publication contents
+        run: |
+          rm mobile/serve.mjs
+          private_file=$(find mobile -type f \( -iname '*.ics' -o -iname '*.csv' -o -iname 'place.json' -o -iname 'config.json' -o -iname 'local-reference.json' -o -iname 'photo-exclusions.json' \) -print -quit)
+          if [ -n "$private_file" ]; then
+            echo "Refusing to publish a mobile build containing private data."
+            exit 1
+          fi
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: mobile
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
