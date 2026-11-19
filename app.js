@@ -8,7 +8,7 @@ import {placeTypes,placeIndex,regionFromAddress} from './place-categories.js';
 import {parseCalendar,expand,details,escape as E,validCoord} from './core.js';
 import {applyRules,gcjToWgs,normalizePlace,isPlaceExcluded,shortRegionName,geometryPolygons,containsPoint} from './organize.js';
 import {compareCalendars} from './calendar-import.js';
-import {isTrip,tripDetails} from './travel.js';
+import {isTrip,tripDates,tripDetails} from './travel.js';
 const sourceTimeIds = {calendar:'cal-version', places:'place-version', blacklist:'blacklist-version'};
 const mobileSource=document.documentElement?.dataset?.mobileSource;
 const mobileImport=mobileSource==='import';
@@ -105,7 +105,7 @@ function renderRank(){
  $('ranking').querySelectorAll('[data-rank-name]').forEach(el=>{el.onclick=()=>setEntityFilter(field,el.dataset.rankName);el.onkeydown=e=>{if(e.target&&e.target!==el)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();setEntityFilter(field,el.dataset.rankName);}};});
  $('ranking').querySelectorAll('[data-rank-eye]').forEach(el=>el.onclick=e=>{e.stopPropagation();rankHidden[field]=toggleRankHidden(rankHidden[field],el.dataset.rankEye);try{localStorage.setItem('atlas-rank-hidden-v1',JSON.stringify(rankHidden));}catch{}renderRank();});
 }
-function renderEvents(){const rows=filtered;$('eventtitle').textContent='事件 · '+rows.length;const showPlaces=$('showplaces').checked,showPeople=$('showpeople').checked;$('events').classList.toggle('hide-places',!showPlaces);$('events').classList.toggle('hide-people',!showPeople);$('events').innerHTML=rows.slice(0,limit).map((e,i)=>{const key=(e.uid||e.title)+'|'+e.start.toISOString(),open=openNotes.has(key);return '<article class="event"><div class="eventrow"><button class="event-time" data-note="'+i+'" aria-expanded="'+open+'" aria-controls="eventnote-'+i+'" title="查看原始备注"><time>'+e.start.toLocaleDateString('zh-CN')+' '+e.start.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})+'</time></button><div class="eventname"><button class="eventtitle" data-filter-event="'+E(e.title)+'" title="按组别与事件筛选">'+E(e.title)+'</button>'+(isTrip(e)?'<button class="event-trip" data-trip-event="'+i+'">按天查看</button>':'')+'</div><div class="eventplaces"'+(showPlaces?'':' hidden')+'>'+e.places.map(n=>'<button class="entitylink" data-filter-place="'+E(n)+'" aria-pressed="'+activeCriteria.some(c=>c.id===criterion('place',n).id)+'">'+E(n)+'</button>').join('')+'</div><div class="eventpeople"'+(showPeople?'':' hidden')+'>'+e.partners.map(n=>'<button class="entitylink" data-filter-person="'+E(n)+'" aria-pressed="'+activeCriteria.some(c=>c.id===criterion('person',n).id)+'">'+E(n)+'</button>').join('')+'</div></div><div class="eventnote" id="eventnote-'+i+'"'+(open?'':' hidden')+'>'+E(e.note||'无备注')+'</div></article>';}).join('')||'<div class="empty">无事件</div>';$('more').hidden=rows.length<=limit;$('events').querySelectorAll('[data-note]').forEach(el=>el.onclick=()=>{const e=rows[+el.dataset.note],key=(e.uid||e.title)+'|'+e.start.toISOString();if(openNotes.has(key))openNotes.delete(key);else openNotes.add(key);renderEvents();});$('events').querySelectorAll('[data-filter-place]').forEach(el=>el.onclick=()=>{setEntityFilter('places',el.dataset.filterPlace);});$('events').querySelectorAll('[data-filter-person]').forEach(el=>el.onclick=()=>{setEntityFilter('partners',el.dataset.filterPerson);});$('events').querySelectorAll('[data-filter-event]').forEach(el=>el.onclick=()=>{activeCriteria=eventCriteria(activeCriteria,el.dataset.filterEvent);refresh();fitPoints();});$('events').querySelectorAll('[data-trip-event]').forEach(el=>el.onclick=()=>openTrips(rows[+el.dataset.tripEvent]));renderFilterChips();}
+function renderEvents(){const rows=filtered;$('eventtitle').textContent='事件 · '+rows.length;const showPlaces=$('showplaces').checked,showPeople=$('showpeople').checked;$('events').classList.toggle('hide-places',!showPlaces);$('events').classList.toggle('hide-people',!showPeople);$('events').innerHTML=rows.slice(0,limit).map((e,i)=>{const key=(e.uid||e.title)+'|'+e.start.toISOString(),open=openNotes.has(key);return '<article class="event"><div class="eventrow"><button class="event-time" data-note="'+i+'" aria-expanded="'+open+'" aria-controls="eventnote-'+i+'" title="查看原始备注"><time>'+e.start.toLocaleDateString('zh-CN')+' '+e.start.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})+'</time></button><div class="eventname"><button class="eventtitle" data-filter-event="'+E(e.title)+'" title="按组别与事件筛选">'+E(e.title)+'</button>'+(isTrip(e)?'<button class="event-trip" data-trip-event="'+i+'">详细</button>':'')+'</div><div class="eventplaces"'+(showPlaces?'':' hidden')+'>'+e.places.map(n=>'<button class="entitylink" data-filter-place="'+E(n)+'" aria-pressed="'+activeCriteria.some(c=>c.id===criterion('place',n).id)+'">'+E(n)+'</button>').join('')+'</div><div class="eventpeople"'+(showPeople?'':' hidden')+'>'+e.partners.map(n=>'<button class="entitylink" data-filter-person="'+E(n)+'" aria-pressed="'+activeCriteria.some(c=>c.id===criterion('person',n).id)+'">'+E(n)+'</button>').join('')+'</div></div><div class="eventnote" id="eventnote-'+i+'"'+(open?'':' hidden')+'>'+E(e.note||'无备注')+'</div></article>';}).join('')||'<div class="empty">无事件</div>';$('more').hidden=rows.length<=limit;$('events').querySelectorAll('[data-note]').forEach(el=>el.onclick=()=>{const e=rows[+el.dataset.note],key=(e.uid||e.title)+'|'+e.start.toISOString();if(openNotes.has(key))openNotes.delete(key);else openNotes.add(key);renderEvents();});$('events').querySelectorAll('[data-filter-place]').forEach(el=>el.onclick=()=>{setEntityFilter('places',el.dataset.filterPlace);});$('events').querySelectorAll('[data-filter-person]').forEach(el=>el.onclick=()=>{setEntityFilter('partners',el.dataset.filterPerson);});$('events').querySelectorAll('[data-filter-event]').forEach(el=>el.onclick=()=>{activeCriteria=eventCriteria(activeCriteria,el.dataset.filterEvent);refresh();fitPoints();});$('events').querySelectorAll('[data-trip-event]').forEach(el=>el.onclick=()=>openTrips(rows[+el.dataset.tripEvent]));renderFilterChips();}
 function renderFilterChips(){
  const draft=$('search').value.trim(), container=$('activefilters');
  container.innerHTML=activeCriteria.map((c,i)=>{
@@ -863,21 +863,40 @@ function reviewEvents(from,to){
  const events=expand(source,from,to,$('recurring').checked).events;
  return applyRules(events,rules,$('exclude').checked).events.filter(event=>event.start>=from&&event.start<=to);
 }
-let tripEvents=[],tripMap,tripMarkers;
+let tripEvents=[],tripMap,tripMarkers,tripRoutes;
 const tripColors=['#3d664e','#315987','#874939','#695087','#856020','#2e6a71'];
-const tripDayLabel=day=>day.number===null?day.label:day.label.slice(5);
+function tripDayLabel(day,full=false){
+ if(day.number===null)return day.label;
+ const [year,month,date]=day.label.split('-').map(Number);
+ if(!full)return month+'月'+date+'日';
+ const weekday='日一二三四五六'[new Date(day.label+'T00:00:00Z').getUTCDay()];
+ return 'Day '+day.number+'：'+year+'年'+month+'月'+date+'日（'+weekday+'）';
+}
 const tripDayColor=day=>day.number===null?'#6b6761':tripColors[(day.number-1)%tripColors.length];
+function tripDayBadge(number){
+ if(number===null)return '?';
+ if(number<=20)return String.fromCharCode(0x245f+number);
+ if(number<=35)return String.fromCharCode(0x323c+number);
+ if(number<=50)return String.fromCharCode(0x328d+number);
+ return '('+number+')';
+}
+function updateTripLines(){
+ if(!tripRoutes)return;
+ if($('trip-line').checked)tripRoutes.addTo(tripMap);
+ else tripMap.removeLayer(tripRoutes);
+}
+$('trip-line').onchange=updateTripLines;
 function renderTripDays(days,overview){
  const list=$('trip-locations'),canvas=$('trip-map');
  if(tripMarkers)tripMarkers.clearLayers();
+ if(tripRoutes)tripRoutes.clearLayers();
  const groups=days.map(day=>({day,locations:day.places.map(name=>{
   const position=pos(name);
   return {name,position,located:position?.precision==='exact'&&validCoord(position)};
  })}));
- const pointsByCoordinate=new Map();
+ const pointsByCoordinate=new Map(),lines=[];
  list.innerHTML=groups.map(({day,locations})=>{
-  const color=tripDayColor(day);
-  const label=tripDayLabel(day);
+  const color=tripDayColor(day),route=[];
   const stops=locations.map(({name,position,located},index)=>{
    if(located){
     const coord=[position.lat,position.lon],key=coord.join(',');
@@ -885,24 +904,33 @@ function renderTripDays(days,overview){
     if(!pointsByCoordinate.has(key))pointsByCoordinate.set(key,{coord,badges:new Map(),labels:new Set()});
     const point=pointsByCoordinate.get(key);
     point.badges.set(number,color);
-    point.labels.add(overview?'【'+label+'】'+name:name);
+    point.labels.add(overview?tripDayBadge(day.number)+' '+name:name);
+    route.push(coord);
    }
    return '<li>'+E(name)+(located?'':' <small>未定位</small>')+'</li>';
   }).join('');
-  return '<section class="trip-group">'+(overview?'<h3><i style="background:'+color+'" aria-hidden="true"></i>【'+E(label)+'】</h3>':'')
-   +(stops?'<ol>'+stops+'</ol>':'<p>暂无地点记录。</p>')+'</section>';
+  if(day.number!==null&&route.length>1)lines.push({route,color});
+  return '<details class="trip-group" open><summary><i style="background:'+color+'" aria-hidden="true"></i>'+E(tripDayLabel(day,true))
+   +'</summary>'+(stops?'<ol>'+stops+'</ol>':'<p>暂无地点记录。</p>')+'</details>';
  }).join('');
+ list.scrollTop=0;
  const points=[...pointsByCoordinate.values()];
  const hasLocations=groups.some(group=>group.locations.length);
  canvas.hidden=!points.length;
+ $('trip-line-toggle').hidden=!lines.length;
  $('trip-status').textContent=!hasLocations?'暂无地点记录。':!points.length?'暂无已定位的地点。':'';
  if(!points.length)return;
  if(!tripMap){
   tripMap=L.map('trip-map',{zoomAnimation:false,scrollWheelZoom:false}).setView(points[0].coord,14);
   const {url,options}=basemaps.osm;
   L.tileLayer(url,{maxZoom:18,...options}).addTo(tripMap);
+  tripRoutes=L.layerGroup();
   tripMarkers=L.layerGroup().addTo(tripMap);
  }
+ for(const {route,color} of lines){
+  L.polyline(route,{color,weight:3,opacity:.82,dashArray:'7 5',className:'trip-route-line',interactive:false}).addTo(tripRoutes);
+ }
+ updateTripLines();
  for(const {coord,badges,labels} of points){
   const html=[...badges].map(([number,color])=>'<span class="trip-pin-badge" style="background:'+color+'">'+number+'</span>').join('');
   const width=badges.size*24+(badges.size-1)*2;
@@ -915,7 +943,7 @@ function renderTripDays(days,overview){
 }
 function renderTrip(event){
  const title=$('trip-title'),summary=$('trip-summary'),tabs=$('trip-day-tabs');
- title.textContent=event?.title||'行程';
+ title.textContent=event?.title||'旅游行程';
  if(!event){
   summary.innerHTML='';
   tabs.innerHTML='';
@@ -925,9 +953,9 @@ function renderTrip(event){
  }
  const {start,end,days}=tripDetails(event);
  summary.textContent=(start===end?start:start+' 至 '+end)
-  +(event.partners.length?' · 同伴 '+event.partners.join('、'):'');
+  +(event.partners.length?' · 同伴：'+event.partners.join('、'):'');
  tabs.innerHTML='<button type="button" data-trip-day="-1" aria-pressed="true">总览</button>'+
-  days.map((day,i)=>'<button type="button" data-trip-day="'+i+'" aria-pressed="false">'+E(tripDayLabel(day))+'</button>').join('');
+  (start===end?'':days.map((day,i)=>'<button type="button" data-trip-day="'+i+'" aria-pressed="false">'+E(tripDayLabel(day))+'</button>').join(''));
  for(const button of tabs.querySelectorAll('[data-trip-day]')){
   button.onclick=()=>{
    for(const other of tabs.querySelectorAll('[data-trip-day]'))other.setAttribute('aria-pressed',String(button===other));
@@ -946,8 +974,13 @@ function openTrips(selected){
   index=0;
  }
  const choice=$('trip-choice');
- $('trip-choice-label').hidden=!tripEvents.length;
- choice.innerHTML=tripEvents.map((event,i)=>'<option value="'+i+'">'+E(event.title+' · '+event.start.toLocaleDateString('zh-CN'))+'</option>').join('');
+ choice.hidden=!tripEvents.length;
+ choice.innerHTML=tripEvents.map((event,i)=>{
+  const {start,end}=tripDates(event);
+  const dateRange=start.replaceAll('-','/')+'-'+end.replaceAll('-','/');
+  const label=[event.title,dateRange,event.partners.join('/')].filter(Boolean).join('·');
+  return '<option value="'+i+'">'+E(label)+'</option>';
+ }).join('');
  choice.value=String(index);
  const dialog=$('trip-dialog');
  if(!dialog.open)dialog.showModal();
@@ -959,7 +992,7 @@ $('trip-close').onclick=()=>$('trip-dialog').close();
 $('trip-dialog').onclose=()=>{
  if($('trip-dialog').open)return;
  if(tripMap)tripMap.remove();
- tripMap=tripMarkers=null;
+ tripMap=tripMarkers=tripRoutes=null;
 };
 function summarizeReview(events){
  const days=new Set(),places=new Map(),partners=new Set();

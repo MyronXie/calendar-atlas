@@ -209,22 +209,32 @@ html[data-mobile-source] [data-rule-toggle]:disabled{cursor:default}
 #calendar-preview-body details{border-bottom:1px solid var(--line);padding-bottom:8px}
 #calendar-preview-body ol,.trip-content ol{padding-left:24px;margin-block:8px}
 #calendar-preview-body li,.trip-content li{padding:4px 0}
-.trip-dialog{width:800px}
-#trip-summary{margin-block:8px}
-.trip-day-tabs{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
+.trip-dialog{width:860px;--trip-map-height:clamp(330px,55vh,560px)}
+.trip-dialog-head{justify-content:flex-end}
+.trip-dialog-head select{flex:1;min-width:0}
+.trip-dialog-head button{flex:none}
+#trip-title{margin:12px 0 4px}
+#trip-summary{margin-block:4px 8px}
+.trip-controls{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.trip-controls .check{margin:0;white-space:nowrap}
+.trip-day-tabs{display:flex;flex-wrap:wrap;gap:5px}
 .trip-day-tabs button[aria-pressed=true]{border-color:var(--accent);background:var(--soft);font-weight:600}
 .trip-content{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(125px,1fr);gap:14px}
-#trip-map{height:280px;background:var(--canvas);border-radius:6px}
+#trip-map{height:var(--trip-map-height);background:var(--canvas);border-radius:6px}
+#trip-locations{min-width:0;max-height:var(--trip-map-height);overflow:auto;overflow-wrap:anywhere;overscroll-behavior:contain}
+#trip-map[hidden]+#trip-locations{grid-column:1/-1}
 .trip-pin{display:flex;gap:2px}
 .trip-pin-badge{width:24px;height:24px;color:#fff;text-align:center;line-height:20px;border:2px solid #fff;border-radius:50%;font-weight:600}
-.trip-group h3{margin:0;font-size:13px}
-.trip-group h3 i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:2px}
+.trip-group{margin:0 0 6px;padding:5px 0;border-bottom:1px solid var(--line)}
+.trip-group summary{font-weight:600;line-height:1.5}
+.trip-group summary i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
 .trip-content small{display:inline}
 .eventname{flex-wrap:wrap}
 .event-trip{min-height:24px;font-size:11px;padding:1px 5px;margin-left:4px}
 @media(max-width:650px){
+ .trip-dialog{--trip-map-height:clamp(270px,42vh,370px)}
  .trip-content{grid-template-columns:minmax(0,1fr);gap:5px}
- #trip-map{height:210px}
+ #trip-locations{max-height:clamp(145px,35vh,330px)}
  .app-toolbar{gap:5px;padding-inline:8px}
  .app-toolbar button{white-space:nowrap;padding-inline:7px}
 }

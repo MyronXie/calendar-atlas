@@ -33,9 +33,21 @@ function heading(line,first,last){
  return candidates.length===1?candidates[0]:null;
 }
 
-export function tripDetails(event){
+function dayRange(event){
  const first=dayOf(event.start);
  const last=dayOf(event.allDay&&event.end>event.start?new Date(+event.end-1):event.end||event.start);
+ return [first,last];
+}
+
+export function tripDates(event){
+ const [first,last]=dayRange(event);
+ return {start:isoDay(first),end:isoDay(last)};
+}
+
+export function tripDetails(event){
+ const [first,last]=dayRange(event);
+ const start=isoDay(first),end=isoDay(last);
+ if(first===last)return {start,end,days:[{label:start,number:1,places:[...(event.places||[])]}]};
  const groups=new Map(),assigned=new Set();
  const allowed=new Set(event.places||[]);
  let day=null;
@@ -59,5 +71,5 @@ export function tripDetails(event){
  const days=[...groups].filter(([key])=>key!==null).sort(([a],[b])=>a-b)
   .map(([key,places])=>({label:isoDay(key),number:(key-first)/dayMs+1,places}));
  if(groups.has(null))days.push({label:'日期待确认',number:null,places:groups.get(null)});
- return {start:isoDay(first),end:isoDay(last),days};
+ return {start,end,days};
 }
