@@ -99,6 +99,11 @@ export function tripDateRange(start,end){
  return start===end?start:start+' 至 '+compactTripEnd(start,end);
 }
 
+export function tripShareFilename(place,start,end){
+ const safePlace=place.replace(/[<>:"/\\|?*\u0000-\u001f]/g,'_');
+ return safePlace+'_'+start+(start===end?'':'_'+compactTripEnd(start,end));
+}
+
 export function tripDetails(event){
  const [first,last]=dayRange(event);
  const start=isoDay(first),end=isoDay(last);

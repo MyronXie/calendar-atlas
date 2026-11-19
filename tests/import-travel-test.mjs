@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {compareCalendars} from '../calendar-import.js';
-import {isTrip,occurrenceCounts,occurrenceDays,tripDateRange,tripDetails,tripSelectLabel} from '../travel.js';
+import {isTrip,occurrenceCounts,occurrenceDays,tripDateRange,tripDetails,tripSelectLabel,tripShareFilename} from '../travel.js';
 
 const calendar=(...records)=>['BEGIN:VCALENDAR','VERSION:2.0',...records,'END:VCALENDAR'].join('\r\n');
 const entry=(uid,title,location,note='',stamp='20260401T100000Z')=>[
@@ -29,6 +29,9 @@ assert.ok(isTrip(trip));
 assert.equal(tripSelectLabel({...trip,partners:['甲','乙']}),'合成·26/04/04-04/08');
 assert.equal(tripDateRange('2026-09-24','2026-09-27'),'2026-09-24 至 09-27');
 assert.equal(tripDateRange('2025-12-31','2026-01-01'),'2025-12-31 至 2026-01-01');
+assert.equal(tripShareFilename('北京','2026-09-24','2026-09-27'),'北京_2026-09-24_09-27');
+assert.equal(tripShareFilename('北京/天津','2025-12-31','2026-01-01'),'北京_天津_2025-12-31_2026-01-01');
+assert.equal(tripShareFilename('北京','2026-09-27','2026-09-27'),'北京_2026-09-27');
 assert.equal(tripSelectLabel({...trip,title:'【测试组】合成之旅（跨年）',start:new Date(2025,11,31),end:new Date(2026,0,2,12)}),
  '合成·25/12/31-26/01/02');
 assert.deepEqual(tripDetails(trip),{

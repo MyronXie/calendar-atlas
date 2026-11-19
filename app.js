@@ -8,7 +8,7 @@ import {placeTypes,placeIndex,regionFromAddress} from './place-categories.js';
 import {parseCalendar,expand,details,escape as E,validCoord} from './core.js';
 import {applyRules,gcjToWgs,normalizePlace,isPlaceExcluded,shortRegionName,geometryPolygons,containsPoint} from './organize.js';
 import {compareCalendars} from './calendar-import.js';
-import {isTrip,occurrenceCounts,occurrenceDays,tripDates,tripDateRange,tripDetails,tripPlace,tripSelectLabel} from './travel.js';
+import {isTrip,occurrenceCounts,occurrenceDays,tripDates,tripDateRange,tripDetails,tripPlace,tripSelectLabel,tripShareFilename} from './travel.js';
 const sourceTimeIds = {calendar:'cal-version', places:'place-version', blacklist:'blacklist-version'};
 const mobileSource=document.documentElement?.dataset?.mobileSource;
 const mobileImport=mobileSource==='import';
@@ -109,7 +109,103 @@ function renderRank(){
  $('ranking').querySelectorAll('[data-rank-name]').forEach(el=>{el.onclick=()=>setEntityFilter(field,el.dataset.rankName);el.onkeydown=e=>{if(e.target&&e.target!==el)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();setEntityFilter(field,el.dataset.rankName);}};});
  $('ranking').querySelectorAll('[data-rank-eye]').forEach(el=>el.onclick=e=>{e.stopPropagation();rankHidden[field]=toggleRankHidden(rankHidden[field],el.dataset.rankEye);try{localStorage.setItem('atlas-rank-hidden-v1',JSON.stringify(rankHidden));}catch{}renderRank();});
 }
-function renderEvents(){const rows=filtered;$('eventtitle').textContent='事件 · '+rows.length;const showPlaces=$('showplaces').checked,showPeople=$('showpeople').checked;$('events').classList.toggle('hide-places',!showPlaces);$('events').classList.toggle('hide-people',!showPeople);$('events').innerHTML=rows.slice(0,limit).map((e,i)=>{const key=(e.uid||e.title)+'|'+e.start.toISOString(),open=openNotes.has(key);return '<article class="event"><div class="eventrow"><button class="event-time" data-note="'+i+'" aria-expanded="'+open+'" aria-controls="eventnote-'+i+'" title="查看原始备注"><time>'+e.start.toLocaleDateString('zh-CN')+' '+e.start.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})+'</time></button><div class="eventname"><button class="eventtitle" data-filter-event="'+E(e.title)+'" title="按组别与事件筛选">'+E(e.title)+'</button>'+(isTrip(e)?'<button class="event-trip" data-trip-event="'+i+'">详细</button>':'')+'</div><div class="eventplaces"'+(showPlaces?'':' hidden')+'>'+e.places.map(n=>'<button class="entitylink" data-filter-place="'+E(n)+'" aria-pressed="'+activeCriteria.some(c=>c.id===criterion('place',n).id)+'">'+E(n)+'</button>').join('')+'</div><div class="eventpeople"'+(showPeople?'':' hidden')+'>'+e.partners.map(n=>'<button class="entitylink" data-filter-person="'+E(n)+'" aria-pressed="'+activeCriteria.some(c=>c.id===criterion('person',n).id)+'">'+E(n)+'</button>').join('')+'</div></div><div class="eventnote" id="eventnote-'+i+'"'+(open?'':' hidden')+'>'+E(e.note||'无备注')+'</div></article>';}).join('')||'<div class="empty">无事件</div>';$('more').hidden=rows.length<=limit;$('events').querySelectorAll('[data-note]').forEach(el=>el.onclick=()=>{const e=rows[+el.dataset.note],key=(e.uid||e.title)+'|'+e.start.toISOString();if(openNotes.has(key))openNotes.delete(key);else openNotes.add(key);renderEvents();});$('events').querySelectorAll('[data-filter-place]').forEach(el=>el.onclick=()=>{setEntityFilter('places',el.dataset.filterPlace);});$('events').querySelectorAll('[data-filter-person]').forEach(el=>el.onclick=()=>{setEntityFilter('partners',el.dataset.filterPerson);});$('events').querySelectorAll('[data-filter-event]').forEach(el=>el.onclick=()=>{activeCriteria=eventCriteria(activeCriteria,el.dataset.filterEvent);refresh();fitPoints();});$('events').querySelectorAll('[data-trip-event]').forEach(el=>el.onclick=()=>openTrips(rows[+el.dataset.tripEvent]));renderFilterChips();}
+const expandedEventPlaces=new Set();
+const eventKey=event=>(event.uid||event.title)+'|'+event.start.toISOString();
+const entityIcons={
+ place:'<path d="M12 21s6-5.2 6-11a6 6 0 1 0-12 0c0 5.8 6 11 6 11Z"/><circle cx="12" cy="10" r="2"/>',
+ person:'<circle cx="12" cy="8" r="3"/><path d="M5 20v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2"/>',
+};
+function eventEntities(names,kind,index,visible,expanded=false){
+ const isPlace=kind==='place';
+ const wrapper='evententities '+(isPlace?'eventplaces':'eventpeople')+(expanded?' is-expanded':'');
+ const hidden=visible?'':' hidden';
+ if(!names.length)return '<div class="'+wrapper+'"'+hidden+'></div>';
+ const links=names.map(name=>'<button class="entitylink" data-filter-'+kind+'="'+E(name)+'" aria-pressed="'
+  +activeCriteria.some(c=>c.id===criterion(kind,name).id)+'">'+E(name)+'</button>').join('');
+ const listId=isPlace?' id="eventplaces-'+index+'"':'';
+ const icon='<svg class="event-entity-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+entityIcons[kind]+'</svg>';
+ const more=isPlace?'<button type="button" class="event-places-more" data-place-toggle="'+index+'" aria-controls="eventplaces-'+index
+  +'" aria-expanded="'+expanded+'" aria-label="'+(expanded?'收起地点':'显示全部地点')+'" hidden>'+(expanded?'收起':'详细')+'</button>':'';
+ return '<div class="'+wrapper+'"'+hidden+'>'+icon+'<div class="event-entity-list"'+listId+'>'+links+'</div>'+more+'</div>';
+}
+let eventLayoutFrame=0;
+function scheduleEventLayout(){
+ if(eventLayoutFrame||typeof requestAnimationFrame!=='function')return;
+ eventLayoutFrame=requestAnimationFrame(()=>{
+  eventLayoutFrame=0;
+  for(const group of $('events').querySelectorAll('.eventplaces:not([hidden])')){
+   const list=group.querySelector('.event-entity-list'),button=group.querySelector('.event-places-more');
+   if(!list||!button)continue;
+   const expanded=group.classList.contains('is-expanded');
+   const twoLines=2*parseFloat(getComputedStyle(list).lineHeight);
+   button.hidden=!expanded&&list.scrollHeight<=twoLines+1;
+   const bottom=list.getBoundingClientRect().top+twoLines;
+   for(const link of list.children)link.inert=!expanded&&link.getBoundingClientRect().bottom>bottom+1;
+  }
+ });
+}
+if(typeof ResizeObserver==='function')new ResizeObserver(scheduleEventLayout).observe($('events'));
+let eventJumpFrame=0;
+const toolbarBottom=()=>document.querySelector('.app-toolbar')?.getBoundingClientRect().bottom||0;
+function scheduleEventJump(){
+ if(eventJumpFrame||typeof requestAnimationFrame!=='function')return;
+ eventJumpFrame=requestAnimationFrame(()=>{
+  eventJumpFrame=0;
+  $('events-back-top').hidden=$('eventtitle').getBoundingClientRect().bottom>toolbarBottom();
+ });
+}
+globalThis.addEventListener?.('scroll',scheduleEventJump,{passive:true});
+globalThis.addEventListener?.('resize',scheduleEventJump);
+$('events-back-top').onclick=()=>{
+ const heading=$('collapse-eventlist');
+ window.scrollBy({top:heading.getBoundingClientRect().top-toolbarBottom()-6,
+  behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
+ heading.focus({preventScroll:true});
+};
+function renderEvents(){
+ const rows=filtered,container=$('events');
+ $('eventtitle').textContent='事件 · '+rows.length;
+ const showPlaces=$('showplaces').checked,showPeople=$('showpeople').checked;
+ container.classList.toggle('hide-places',!showPlaces);
+ container.classList.toggle('hide-people',!showPeople);
+ container.innerHTML=rows.slice(0,limit).map((event,i)=>{
+  const key=eventKey(event),open=openNotes.has(key);
+  const time=event.start.toLocaleDateString('zh-CN')+' '+event.start.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+  const trip=isTrip(event)?'<button class="event-trip" data-trip-event="'+i+'" aria-label="查看行程详细">详细</button>':'';
+  return '<article class="event"><div class="eventrow"><button class="event-time" data-note="'+i+'" aria-expanded="'+open
+   +'" aria-controls="eventnote-'+i+'" title="查看原始备注"><time datetime="'+event.start.toISOString()+'">'+time+'</time></button>'
+   +'<div class="eventname"><button class="eventtitle" data-filter-event="'+E(event.title)+'" title="按组别与事件筛选">'+E(event.title)+'</button>'+trip+'</div>'
+   +eventEntities(event.places,'place',i,showPlaces,expandedEventPlaces.has(key))
+   +eventEntities(event.partners,'person',i,showPeople)
+   +'</div><div class="eventnote" id="eventnote-'+i+'"'+(open?'':' hidden')+'>'+E(event.note||'无备注')+'</div></article>';
+ }).join('')||'<div class="empty">无事件</div>';
+ $('more').hidden=rows.length<=limit;
+ container.querySelectorAll('[data-place-toggle]').forEach(button=>button.onclick=()=>{
+  const key=eventKey(rows[+button.dataset.placeToggle]),expanded=!expandedEventPlaces.has(key);
+  if(expanded)expandedEventPlaces.add(key);
+  else expandedEventPlaces.delete(key);
+  button.parentElement.classList.toggle('is-expanded',expanded);
+  button.textContent=expanded?'收起':'详细';
+  button.setAttribute('aria-expanded',String(expanded));
+  button.setAttribute('aria-label',expanded?'收起地点':'显示全部地点');
+  scheduleEventLayout();
+ });
+ container.querySelectorAll('[data-note]').forEach(el=>el.onclick=()=>{
+  const key=eventKey(rows[+el.dataset.note]);
+  if(openNotes.has(key))openNotes.delete(key);
+  else openNotes.add(key);
+  renderEvents();
+ });
+ for(const [kind,field] of [['place','places'],['person','partners']]){
+  const key=kind==='place'?'filterPlace':'filterPerson';
+  container.querySelectorAll('[data-filter-'+kind+']').forEach(el=>el.onclick=()=>setEntityFilter(field,el.dataset[key]));
+ }
+ container.querySelectorAll('[data-filter-event]').forEach(el=>el.onclick=()=>{activeCriteria=eventCriteria(activeCriteria,el.dataset.filterEvent);refresh();fitPoints();});
+ container.querySelectorAll('[data-trip-event]').forEach(el=>el.onclick=()=>openTrips(rows[+el.dataset.tripEvent]));
+ scheduleEventLayout();
+ scheduleEventJump();
+ renderFilterChips();
+}
 function renderFilterChips(){
  const draft=$('search').value.trim(), container=$('activefilters');
  container.innerHTML=activeCriteria.map((c,i)=>{
@@ -134,6 +230,7 @@ for(const key of ['address','lat','lon','datum'])$('editform').elements[key].add
 $('editform').onsubmit=async e=>{e.preventDefault();const p=Object.fromEntries(new FormData(e.target));if(p.valid!=='no'){const ov=e.target.dataset.origValid||'';p.valid=(ov&&ov!=='no')?ov:'';}$('saveplace').disabled=true;$('editerror').textContent='';try{await writeCSV([p],editingVersion);$('editor').close();}catch(err){$('editerror').textContent=err.message;}finally{$('saveplace').disabled=false;}};
 $('cancel').onclick=()=>$('editor').close();
 let calendarPreviewBusy=false;
+$('desktop-calendar-import').onclick=()=>$('ics').click();
 $('calendar-preview-close').onclick=()=>$('calendar-preview').close();
 $('calendar-preview').oncancel=event=>{if(calendarPreviewBusy)event.preventDefault();};
 $('ics').onchange=async event=>{
@@ -920,7 +1017,7 @@ function reviewEvents(from,to,includeOverlapping=false){
 }
 let tripEvents=[],tripMap,tripMarkers,tripRoutes,tripLayerControl,tripShareData;
 let tripExportMap,tripExportTiles,tripExportRoutes;
-const tripExportSize=768;
+const tripExportSize=420;
 let tripLinesEnabled=true;
 const tripColors=['#3d664e','#315987','#874939','#695087','#856020','#2e6a71'];
 function tripDayLabel(day){
@@ -1085,7 +1182,7 @@ function updateTripShareControls(){
   tripExportResize?.observe(frame);
   tripExportMap=L.map(element,{zoomAnimation:false,fadeAnimation:false,zoomControl:false,attributionControl:false,boxZoom:false,
    scrollWheelZoom:false,doubleClickZoom:false,dragging:false,touchZoom:false,keyboard:false,zoomSnap:.25});
-  fitTripMap(tripExportMap,points,52,16);
+  fitTripMap(tripExportMap,points,28,15);
   const {url,options}=basemaps.osm;
   tripExportTiles=L.tileLayer(url,{maxZoom:18,...options,crossOrigin:true}).addTo(tripExportMap);
   addTripPins(points,tripExportMap,true);
@@ -1130,7 +1227,8 @@ $('trip-share-save').onclick=async()=>{
   const mapImage=map?await captureTripMap(map,tiles):null;
   if(data!==tripShareData||!dialog.open||map!==tripExportMap)return;
   const canvas=drawTripShare({title,dates,partners,groups,points,lines:routes,overview,showPlaces,showMap:!!map,palette,mapImage});
-  await downloadPng(canvas,title+'_'+(overview?start+'_'+end:groups[0]?.day.label||start),dialog);
+  const selected=overview?start:groups[0]?.day.label||start;
+  await downloadPng(canvas,tripShareFilename(title,selected,overview?end:selected),dialog);
   status.textContent=map&&!mapImage?'已导出。底图暂不可用，已保留点位。':'已生成 PNG 图片';
  }catch{
   status.textContent='图片导出失败，请重试';
@@ -1698,7 +1796,7 @@ async function startAtlas(){
   try{load(calendar.value,false,true);calendarReady=true;}catch{}
  }
  if(!calendarReady){
-  $('events').innerHTML='<div class="empty" role="status">未能读取日历，可从设置重新读取或导入日历。</div>';
+  $('events').innerHTML='<div class="empty" role="status">未能读取日历，可在设置的偏好中重新读取或选择日历文件。</div>';
   draw();
  }
  const missing=[];
