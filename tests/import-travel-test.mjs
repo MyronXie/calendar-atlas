@@ -29,10 +29,18 @@ assert.ok(isTrip(trip));
 assert.deepEqual(tripDetails(trip),{
  start:'2026-04-04',end:'2026-04-08',
  days:[
-  {label:'2026-04-05',places:['地点甲','地点乙']},
-  {label:'2026-04-06',places:['地点丙']},
-  {label:'2026-04-08',places:['地点丁']},
-  {label:'日期待确认',places:['未知地点']},
+  {label:'2026-04-05',number:2,places:['地点甲','地点乙']},
+  {label:'2026-04-06',number:3,places:['地点丙']},
+  {label:'2026-04-08',number:5,places:['地点丁']},
+  {label:'日期待确认',number:null,places:['未知地点']},
  ]
 });
 assert.equal(tripDetails({ ...trip,allDay:true,end:new Date(2026,3,8)}).end,'2026-04-07');
+const newYear=tripDetails({
+ ...trip,start:new Date(2025,11,31),end:new Date(2026,0,2),
+ places:['地点甲','地点乙','地点丙'],
+ note:'【12-31】\nPlace：地点甲\n【01-01】\nPlace：地点乙\n【01-02 临时安排】\nPlace：地点丙',
+});
+assert.deepEqual(newYear.days.map(({label,number})=>[label,number]),[
+ ['2025-12-31',1],['2026-01-01',2],['日期待确认',null],
+]);

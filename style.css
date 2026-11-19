@@ -215,7 +215,10 @@ html[data-mobile-source] [data-rule-toggle]:disabled{cursor:default}
 .trip-day-tabs button[aria-pressed=true]{border-color:var(--accent);background:var(--soft);font-weight:600}
 .trip-content{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(125px,1fr);gap:14px}
 #trip-map{height:280px;background:var(--canvas);border-radius:6px}
-.trip-pin{background:var(--accent);color:#fff;text-align:center;line-height:20px;border:2px solid #fff;border-radius:50%;font-weight:600}
+.trip-pin{display:flex;gap:2px}
+.trip-pin-badge{width:24px;height:24px;color:#fff;text-align:center;line-height:20px;border:2px solid #fff;border-radius:50%;font-weight:600}
+.trip-group h3{margin:0;font-size:13px}
+.trip-group h3 i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:2px}
 .trip-content small{display:inline}
 .eventname{flex-wrap:wrap}
 .event-trip{min-height:24px;font-size:11px;padding:1px 5px;margin-left:4px}

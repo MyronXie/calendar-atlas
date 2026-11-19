@@ -16,8 +16,8 @@
 <dialog id="trip-dialog" class="atlas-dialog trip-dialog" aria-labelledby="trip-title">
  <header class="atlas-dialog-head"><h2 id="trip-title">行程</h2><button id="trip-close" type="button">关闭</button></header>
  <label id="trip-choice-label">选择行程<select id="trip-choice"></select></label>
- <div id="trip-summary"></div><div id="trip-day-tabs" class="trip-day-tabs"></div>
- <div class="trip-content"><div id="trip-map" aria-label="当日地点地图"></div><ol id="trip-locations"></ol></div>
+ <div id="trip-summary"></div><div id="trip-day-tabs" class="trip-day-tabs" role="group" aria-label="行程日期"></div>
+ <div class="trip-content"><div id="trip-map" aria-label="行程地点地图"></div><div id="trip-locations"></div></div>
  <p id="trip-status" role="status"></p>
 </dialog>
 <div id="annual-review" class="annual-overlay" hidden>

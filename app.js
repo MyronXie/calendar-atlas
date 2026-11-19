@@ -864,20 +864,38 @@ function reviewEvents(from,to){
  return applyRules(events,rules,$('exclude').checked).events.filter(event=>event.start>=from&&event.start<=to);
 }
 let tripEvents=[],tripMap,tripMarkers;
-function renderTripDay(day){
+const tripColors=['#3d664e','#315987','#874939','#695087','#856020','#2e6a71'];
+const tripDayLabel=day=>day.number===null?day.label:day.label.slice(5);
+const tripDayColor=day=>day.number===null?'#6b6761':tripColors[(day.number-1)%tripColors.length];
+function renderTripDays(days,overview){
  const list=$('trip-locations'),canvas=$('trip-map');
  if(tripMarkers)tripMarkers.clearLayers();
- const locations=(day?.places||[]).map(name=>({name,position:pos(name)}));
- const points=[];
- list.innerHTML=locations.map(({name,position})=>{
-  const located=position?.precision==='exact';
-  return '<li>'+E(name)+(located?'':' <small>未定位</small>')+'</li>';
+ const groups=days.map(day=>({day,locations:day.places.map(name=>{
+  const position=pos(name);
+  return {name,position,located:position?.precision==='exact'&&validCoord(position)};
+ })}));
+ const pointsByCoordinate=new Map();
+ list.innerHTML=groups.map(({day,locations})=>{
+  const color=tripDayColor(day);
+  const label=tripDayLabel(day);
+  const stops=locations.map(({name,position,located},index)=>{
+   if(located){
+    const coord=[position.lat,position.lon],key=coord.join(',');
+    const number=overview?(day.number??'?'):index+1;
+    if(!pointsByCoordinate.has(key))pointsByCoordinate.set(key,{coord,badges:new Map(),labels:new Set()});
+    const point=pointsByCoordinate.get(key);
+    point.badges.set(number,color);
+    point.labels.add(overview?'【'+label+'】'+name:name);
+   }
+   return '<li>'+E(name)+(located?'':' <small>未定位</small>')+'</li>';
+  }).join('');
+  return '<section class="trip-group">'+(overview?'<h3><i style="background:'+color+'" aria-hidden="true"></i>【'+E(label)+'】</h3>':'')
+   +(stops?'<ol>'+stops+'</ol>':'<p>暂无地点记录。</p>')+'</section>';
  }).join('');
- locations.forEach(({name,position},index)=>{
-  if(position?.precision==='exact'&&validCoord(position))points.push({name,number:index+1,coord:[position.lat,position.lon]});
- });
+ const points=[...pointsByCoordinate.values()];
+ const hasLocations=groups.some(group=>group.locations.length);
  canvas.hidden=!points.length;
- $('trip-status').textContent=!locations.length?'这一天暂无地点记录。':!points.length?'这一天暂无已定位的地点。':'';
+ $('trip-status').textContent=!hasLocations?'暂无地点记录。':!points.length?'暂无已定位的地点。':'';
  if(!points.length)return;
  if(!tripMap){
   tripMap=L.map('trip-map',{zoomAnimation:false,scrollWheelZoom:false}).setView(points[0].coord,14);
@@ -885,9 +903,12 @@ function renderTripDay(day){
   L.tileLayer(url,{maxZoom:18,...options}).addTo(tripMap);
   tripMarkers=L.layerGroup().addTo(tripMap);
  }
- for(const {name,number,coord} of points){
-  const icon=L.divIcon({className:'trip-pin',html:String(number),iconSize:[24,24],iconAnchor:[12,12]});
-  L.marker(coord,{icon,alt:name}).bindTooltip(E(name),{direction:'top'}).addTo(tripMarkers);
+ for(const {coord,badges,labels} of points){
+  const html=[...badges].map(([number,color])=>'<span class="trip-pin-badge" style="background:'+color+'">'+number+'</span>').join('');
+  const width=badges.size*24+(badges.size-1)*2;
+  const names=[...labels];
+  const icon=L.divIcon({className:'trip-pin',html,iconSize:[width,24],iconAnchor:[width/2,12]});
+  L.marker(coord,{icon,alt:names.join('、')}).bindTooltip(names.map(E).join('<br>'),{direction:'top'}).addTo(tripMarkers);
  }
  tripMap.invalidateSize({pan:false});
  tripMap.fitBounds(points.map(point=>point.coord),{padding:[24,24],maxZoom:15,animate:false});
@@ -898,21 +919,23 @@ function renderTrip(event){
  if(!event){
   summary.innerHTML='';
   tabs.innerHTML='';
-  renderTripDay(null);
+  renderTripDays([],true);
   $('trip-status').textContent='日历里没有识别到「××之旅」事件。';
   return;
  }
  const {start,end,days}=tripDetails(event);
  summary.textContent=(start===end?start:start+' 至 '+end)
   +(event.partners.length?' · 同伴 '+event.partners.join('、'):'');
- tabs.innerHTML=days.map(({label},i)=>'<button type="button" data-trip-day="'+i+'" aria-pressed="'+(i===0)+'">'+E(label)+'</button>').join('');
+ tabs.innerHTML='<button type="button" data-trip-day="-1" aria-pressed="true">总览</button>'+
+  days.map((day,i)=>'<button type="button" data-trip-day="'+i+'" aria-pressed="false">'+E(tripDayLabel(day))+'</button>').join('');
  for(const button of tabs.querySelectorAll('[data-trip-day]')){
   button.onclick=()=>{
    for(const other of tabs.querySelectorAll('[data-trip-day]'))other.setAttribute('aria-pressed',String(button===other));
-   renderTripDay(days[Number(button.dataset.tripDay)]);
+   const index=Number(button.dataset.tripDay);
+   renderTripDays(index===-1?days:[days[index]],index===-1);
   };
  }
- renderTripDay(days[0]);
+ renderTripDays(days,true);
 }
 function openTrips(selected){
  ensureTimeline();
