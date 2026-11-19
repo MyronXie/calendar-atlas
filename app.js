@@ -1,7 +1,7 @@
 import {annualLegend,cityKey,drawAnnualImage,drawAnnualMap,drawShanghaiMap,layoutMapLabels,mapAttribution,shanghaiDistricts,shanghaiMapPlaces,shanghaiMetroLayers,shanghaiName} from './annual-review.js';
 import {basemaps} from './basemaps.js';
-import {periodCounts,addMatches,barHeights,brushLabelLayout} from './timeline.js';
-import {palettes,resolveTheme,coordinateLabel} from './appearance.js';
+import {periodCounts,addMatches,barHeights,brushLabelLayout,matchedLabelPlacement} from './timeline.js';
+import {palettes,resolveTheme,coordinateLabel,highlightLabelColor} from './appearance.js';
 import {criterion,toggleCriterion,matchesFilters,criterionLabel,eventParts,eventCriteria,rankSections,toggleRankHidden} from './filters.js';
 import {selectEmoji} from './emoji.js';
 import {placeTypes,placeIndex,regionFromAddress} from './place-categories.js';
@@ -44,6 +44,8 @@ let highlightCityProvinces=false;
 // Leaflet 1.7 can restore an animated zoom's old target after setView resets the map.
 const map=L.map('map',{preferCanvas:true,zoomAnimation:false}).setView([32,108],4);let tiles=null;let csvVersion='',editingVersion='',placeLimit=100,activePanel='manage',settingsOpen=false;let markerLayer=null,heatLayer=null,placeToggles=null,reference={places:[]},rules={},configVersion='',emojiConfig={},blacklistBusy=false,blacklistEditing=-1,blacklistEditVersion='',baseCoords=new Map(),yearMin=2000,yearMax=2026,pickMode=false;
 L.control.scale({imperial:false}).addTo(map);
+const regionLabelPane='atlas-labels';
+map.createPane(regionLabelPane);
 $('provider').innerHTML=Object.entries(basemaps).map(([key,{label}])=>'<option value="'+key+'">'+label+'</option>').join('');
 const savedProvider=localStorage.getItem('atlas-provider-v2');
 $('provider').value=Object.hasOwn(basemaps,savedProvider)?savedProvider:'qh360';
@@ -574,7 +576,55 @@ for(const id of countOptionIds)$(id).onchange=()=>{
  refresh({timeline:id!=='merge-same-day'});
 };
 function ensureTimeline(){const key=JSON.stringify([source.length,yearMin,yearMax,$('recurring').checked,$('exclude').checked,rules,csvVersion]);if(key!==timelineKey){timelineEvents=applyRules(expand(source,new Date(yearMin,0,1),new Date(yearMax,11,31,23,59,59,999),$('recurring').checked).events,rules,$('exclude').checked,new Set()).events;timelineKey=key;}}
-function syncYears(){ensureTimeline();const monthly=$('timeunit').value==='month';const [min,max]=monthly?timelineMonthBounds():[yearMin,yearMax];const index=d=>monthly?Number(d.slice(0,4))*12+Number(d.slice(5,7))-1:Number(d.slice(0,4));const a=Math.max(min,Math.min(max,index($('from').value)||min)),b=Math.max(a,Math.min(max,index($('to').value)||max));for(const id of ['yearfrom','yearto']){$(id).min=min;$(id).max=max;}$('yearfrom').value=a;$('yearto').value=b;const label=i=>monthly?Math.floor(i/12)+'-'+String(i%12+1).padStart(2,'0'):String(i);periods=addMatches(periodCounts(timelineEvents,monthly,min,max),filtered,monthly,min);const peak=Math.max(1,...periods.map(p=>p.total));$('timeline-track').classList.toggle('monthly',monthly);$('timeline-track').style.minWidth='0';$('timeline-track').style.width='100%';$('period-start').textContent=label(a);$('period-end').textContent=label(b);$('yearbars').classList.toggle('single-selection',a===b);$('yearbars').innerHTML=periods.map(p=>{const normalFiltering=activeCriteria.length>0||Boolean($('search').value.trim());const heights=barHeights(p.total,normalFiltering?p.matched:0,peak);return '<button class="yearbar '+(p.index>=a&&p.index<=b?'selected ':'')+((monthly?Math.floor(p.index/12):p.index)%2?'year-dark':'year-light')+(monthly&&p.index%12===0&&p.index>min?' year-start':'')+'" data-period="'+p.index+'" data-total="'+p.total+'" data-matched="'+p.matched+'" title="'+label(p.index)+' · '+p.matched+'/'+p.total+'" aria-label="'+label(p.index)+'">'+(monthly?'':'<span class="barcount">'+(normalFiltering?p.matched+'/'+p.total:p.total)+'</span>')+'<span class="bar-stack" style="height:'+heights.total+'px"><i class="bar-original"></i>'+(normalFiltering?'<i class="bar-matched" style="height:'+heights.matched+'px"></i>':'')+'</span>'+(monthly?'':'<span class="year-full">'+label(p.index)+'</span><span class="year-short" aria-hidden="true">'+'&#39;'+label(p.index).slice(-2)+'</span>')+'</button>';}).join('');$('yearbars').querySelectorAll('[data-period]').forEach(el=>el.onclick=()=>selectPeriods(+el.dataset.period,+el.dataset.period));const n=periods.length;$('brushselection').style.left=(a-min)/n*100+'%';$('brushselection').style.width=(b-a+1)/n*100+'%';layoutTimelineLabels();for(const [id,value] of [['brushleft',a],['brushright',b]]){for(const [key,v] of [['aria-valuemin',min],['aria-valuemax',max],['aria-valuenow',value],['aria-valuetext',label(value)]])$(id).setAttribute(key,String(v));}}
+function syncYears(){
+ ensureTimeline();
+ const monthly=$('timeunit').value==='month';
+ const [min,max]=monthly?timelineMonthBounds():[yearMin,yearMax];
+ const index=date=>monthly?Number(date.slice(0,4))*12+Number(date.slice(5,7))-1:Number(date.slice(0,4));
+ const a=Math.max(min,Math.min(max,index($('from').value)||min));
+ const b=Math.max(a,Math.min(max,index($('to').value)||max));
+ for(const id of ['yearfrom','yearto']){
+  $(id).min=min;
+  $(id).max=max;
+ }
+ $('yearfrom').value=a;
+ $('yearto').value=b;
+ const label=i=>monthly?Math.floor(i/12)+'-'+String(i%12+1).padStart(2,'0'):String(i);
+ periods=addMatches(periodCounts(timelineEvents,monthly,min,max),filtered,monthly,min);
+ const peak=Math.max(1,...periods.map(p=>p.total));
+ const filtering=activeCriteria.length>0||Boolean($('search').value.trim());
+ const track=$('timeline-track'),bars=$('yearbars');
+ track.classList.toggle('monthly',monthly);
+ track.style.minWidth='0';
+ track.style.width='100%';
+ $('period-start').textContent=label(a);
+ $('period-end').textContent=label(b);
+ bars.classList.toggle('single-selection',a===b);
+ const count=(value,className)=>'<span class="'+className+'" style="--count-digits:'+String(value).length+'" aria-hidden="true">'+value+'</span>';
+ bars.innerHTML=periods.map(({index,total,matched})=>{
+  const heights=barHeights(total,filtering?matched:0,peak);
+  const placement=monthly?'above':matchedLabelPlacement(heights);
+  const date=label(index);
+  const description=date+' · '+(filtering?'命中 '+matched+'，':'')+'共 '+total+' 条事件';
+  const mode=monthly?Math.floor(index/12):index;
+  return '<button class="yearbar '+(index>=a&&index<=b?'selected ':'')+(mode%2?'year-dark':'year-light')
+   +(monthly&&index%12===0&&index>min?' year-start':'')+'" data-period="'+index+'" data-total="'+total
+   +'" data-matched="'+matched+'" title="'+description+'" aria-label="'+description+'">'
+   +'<span class="bar-stack '+placement+'" style="height:'+heights.total+'px;--matched-height:'+heights.matched+'px">'
+   +'<i class="bar-original"></i>'+(filtering?'<i class="bar-matched"></i>':'')
+   +(monthly?'':count(total,'barcount')+(heights.matched?count(matched,'bar-match-count'):''))
+   +'</span>'+(monthly?'':'<span class="year-full">'+date+'</span><span class="year-short" aria-hidden="true">&#39;'+date.slice(-2)+'</span>')
+   +'</button>';
+ }).join('');
+ bars.querySelectorAll('[data-period]').forEach(el=>el.onclick=()=>selectPeriods(+el.dataset.period,+el.dataset.period));
+ const n=periods.length;
+ $('brushselection').style.left=(a-min)/n*100+'%';
+ $('brushselection').style.width=(b-a+1)/n*100+'%';
+ layoutTimelineLabels();
+ for(const [id,value] of [['brushleft',a],['brushright',b]]){
+  for(const [key,v] of [['aria-valuemin',min],['aria-valuemax',max],['aria-valuenow',value],['aria-valuetext',label(value)]])$(id).setAttribute(key,String(v));
+ }
+}
 function layoutTimelineLabels(){
  const track=$('brushtrack'),width=track.getBoundingClientRect().width;
  if(!width||!periods.length)return;
@@ -583,6 +633,8 @@ function layoutTimelineLabels(){
  const yearBars=$('timeline-track');
  const compact=!monthly&&(width-4*(count-1))/count<29;
  yearBars.classList.toggle('compact-years',compact);
+ const gap=monthly?0:compact?1:4;
+ yearBars.style.setProperty('--count-column',String(Math.max(1,(width-gap*(count-1))/count)));
  const start=$('period-start'),end=$('period-end');
  const anchor=i=>i/count*width;
  const startEdge=anchor(+$('yearfrom').value-min);
@@ -675,19 +727,19 @@ function renderProvinceLabels(size){
    const color=colors().dark;
    const ratio=1/Math.max(1,2*Math.abs(x-ax)/w,2*Math.abs(y-ay)/h);
    const endpoint=map.containerPointToLatLng([x+(ax-x)*ratio,y+(ay-y)*ratio]);
-   regionLabels.push(L.polyline([coord,endpoint],{color,weight:1,opacity:.68,interactive:false}).addTo(map));
-   regionLabels.push(L.circleMarker(coord,{radius:1.5,fillColor:color,fillOpacity:.9,stroke:false,interactive:false}).addTo(map));
+   regionLabels.push(L.polyline([coord,endpoint],{pane:regionLabelPane,color,weight:1,opacity:.68,interactive:false}).addTo(map));
+   regionLabels.push(L.circleMarker(coord,{pane:regionLabelPane,radius:1.5,fillColor:color,fillOpacity:.9,stroke:false,interactive:false}).addTo(map));
   }
   const icon=L.divIcon({className:'region-label province-label'+(shifted?' province-callout':'')+(visited?' visited-label':''),
    html:E(name),iconSize:[w,h],iconAnchor:[w/2,h/2]});
-  regionLabels.push(L.marker(position,{icon,interactive:false,keyboard:false}).addTo(map));
+  regionLabels.push(L.marker(position,{pane:regionLabelPane,icon,interactive:false,keyboard:false}).addTo(map));
  }
 }
 const CAPITALS={'北京市':'北京市','天津市':'天津市','河北省':'石家庄市','山西省':'太原市','内蒙古自治区':'呼和浩特市','辽宁省':'沈阳市','吉林省':'长春市','黑龙江省':'哈尔滨市','上海市':'上海市','江苏省':'南京市','浙江省':'杭州市','安徽省':'合肥市','福建省':'福州市','江西省':'南昌市','山东省':'济南市','河南省':'郑州市','湖北省':'武汉市','湖南省':'长沙市','广东省':'广州市','广西壮族自治区':'南宁市','海南省':'海口市','重庆市':'重庆市','四川省':'成都市','贵州省':'贵阳市','云南省':'昆明市','西藏自治区':'拉萨市','陕西省':'西安市','甘肃省':'兰州市','青海省':'西宁市','宁夏回族自治区':'银川市','新疆维吾尔自治区':'乌鲁木齐市','台湾省':'台北市','香港特别行政区':'香港','澳门特别行政区':'澳门'};const MUNI=['北京市','上海市','天津市','重庆市'];
 let _regionNames=null;function zhCountry(pr){if(!pr)return '';const code=pr['ISO3166-1-Alpha-2']||pr.ISO_A2;try{if(code){_regionNames=_regionNames||new Intl.DisplayNames(['zh-CN'],{type:'region'});const n=_regionNames.of(String(code));if(n&&n!==code)return n;}}catch{}const raw=pr.name||pr.ADMIN||pr.NAME;return aliases[raw]||raw||'';}
 const _labelPtCache=new WeakMap();
 function labelPoint(f){if(f&&_labelPtCache.has(f))return _labelPtCache.get(f);let res=null;try{const polys=geometryPolygons(f.geometry);if(!polys.length)return null;let best=null,bestA=-1;for(const poly of polys){const r=poly[0];if(!r||!r.length)continue;let minx=1e9,maxx=-1e9,miny=1e9,maxy=-1e9;for(const pt of r){if(pt[0]<minx)minx=pt[0];if(pt[0]>maxx)maxx=pt[0];if(pt[1]<miny)miny=pt[1];if(pt[1]>maxy)maxy=pt[1];}const a=(maxx-minx)*(maxy-miny);if(a>bestA){bestA=a;best={poly,minx,maxx,miny,maxy};}}if(!best)return null;const outer=best.poly[0];const inside=(x,y)=>containsPoint([best.poly],x,y);let a=0,cx=0,cy=0;for(let i=0,j=outer.length-1;i<outer.length;j=i++){const x1=outer[j][0],y1=outer[j][1],x2=outer[i][0],y2=outer[i][1],cr=x1*y2-x2*y1;a+=cr;cx+=(x1+x2)*cr;cy+=(y1+y2)*cr;}const px=a?cx/(3*a):(best.minx+best.maxx)/2,py=a?cy/(3*a):(best.miny+best.maxy)/2;if(inside(px,py))res=[py,px];else{let best2=null,bd=Infinity;const N=24;for(let ix=0;ix<N;ix++)for(let iy=0;iy<N;iy++){const x=best.minx+(best.maxx-best.minx)*(ix+0.5)/N,y=best.miny+(best.maxy-best.miny)*(iy+0.5)/N;if(!inside(x,y))continue;const d=(x-px)*(x-px)+(y-py)*(y-py);if(d<bd){bd=d;best2=[y,x];}}res=best2||[py,px];}}catch{}if(f)_labelPtCache.set(f,res);return res;}
-function renderRegionLabels(){if(typeof window==='undefined')return;syncShanghaiStations();clearRegionLabels();const level=mapLevel();if(level==='place'||level==='country'&&!world||level==='shanghai'&&!cityBoundaries)return;const size=map.getSize();if(level==='province'){renderProvinceLabels(size);return;}const src=level==='shanghai'?(shanghaiLayerOptions.boundaries?shanghaiDistricts(cityBoundaries):[]):level==='country'?world.features:cityFeatures();const lit=new Set((typeof points!=='undefined'?points:[]).filter(p=>p&&p.count>0).map(p=>p.name));const capName=f=>{const pr=f.properties||{};return CAPITALS[pr.province]===pr.name||MUNI.includes(pr.name);};let entries=src.map(f=>{const pr=f.properties||{};const raw=level==='country'?(pr.name||pr.ADMIN||pr.NAME):pr.name;const name=level==='country'?zhCountry(pr):raw;if(!name)return null;return {f,name,lit:lit.has(name)||lit.has(raw),cap:level==='city'&&capName(f),adcode:pr.adcode||0};}).filter(Boolean);const fnames=new Set(src.map(f=>f.properties.name));if(level==='city'){for(const q of (typeof points!=='undefined'?points:[])){if(!q||!q.count||!q.name||fnames.has(q.name)||!validCoord(q))continue;entries.push({f:null,name:q.name,pt:[+q.lat,+q.lon],lit:true,cap:false,adcode:0});}}const sp=n=>n==='南昌市'||n==='南昌';entries.sort((a,b)=>{if(a.lit!==b.lit)return a.lit?-1:1;if(level==='city'){const sa=sp(a.name),sb=sp(b.name);if(a.lit){if(sa!==sb)return sa?-1:1;if(a.cap!==b.cap)return a.cap?-1:1;return a.adcode-b.adcode;}if(a.cap!==b.cap)return a.cap?-1:1;return a.adcode-b.adcode;}return 0;});if(level==='city')entries=entries.filter(e=>e.lit);const placed=[];for(const en of entries){const{f,name}=en;let c=f?labelPoint(f):en.pt;let bounds=null;if(level==='shanghai'){if(c)c=gcjToWgs(...c);}else try{bounds=L.geoJSON(f).getBounds();}catch{}if(!c&&bounds&&bounds.isValid())c=bounds.getCenter();if(!c)continue;const pt=map.latLngToContainerPoint(c);if(pt.x<0||pt.y<0||pt.x>size.x||pt.y>size.y)continue;const allowSmall=level==='shanghai'||en.lit||en.cap||/香港|澳门/.test(name);if(!allowSmall&&bounds&&bounds.isValid()){const nw=map.latLngToContainerPoint(bounds.getNorthWest()),se=map.latLngToContainerPoint(bounds.getSouthEast());if(Math.abs(se.x-nw.x)<20||Math.abs(se.y-nw.y)<11)continue;}const text=shortRegionName(name);const font=level==='shanghai'?13:12,w=text.length*(font+1)+8;if(placed.some(p=>Math.abs(p.x-pt.x)<(p.w+w)/2&&Math.abs(p.y-pt.y)<16))continue;placed.push({x:pt.x,y:pt.y,w});const cls='region-label'+(en.lit&&level==='city'?' visited-label':!en.lit?' unlit':'');const mk=L.marker(c,{icon:L.divIcon({className:cls,html:E(text),iconSize:[w,font+4],iconAnchor:[w/2,(font+4)/2]}),interactive:false,keyboard:false}).addTo(map);regionLabels.push(mk);}if(level==='shanghai')renderShanghaiFeatureLabels(placed,size);}
+function renderRegionLabels(){if(typeof window==='undefined')return;syncShanghaiStations();clearRegionLabels();const level=mapLevel();if(level==='place'||level==='country'&&!world||level==='shanghai'&&!cityBoundaries)return;const size=map.getSize();if(level==='province'){renderProvinceLabels(size);return;}const src=level==='shanghai'?(shanghaiLayerOptions.boundaries?shanghaiDistricts(cityBoundaries):[]):level==='country'?world.features:cityFeatures();const lit=new Set((typeof points!=='undefined'?points:[]).filter(p=>p&&p.count>0).map(p=>p.name));const capName=f=>{const pr=f.properties||{};return CAPITALS[pr.province]===pr.name||MUNI.includes(pr.name);};let entries=src.map(f=>{const pr=f.properties||{};const raw=level==='country'?(pr.name||pr.ADMIN||pr.NAME):pr.name;const name=level==='country'?zhCountry(pr):raw;if(!name)return null;return {f,name,lit:lit.has(name)||lit.has(raw),cap:level==='city'&&capName(f),adcode:pr.adcode||0};}).filter(Boolean);const fnames=new Set(src.map(f=>f.properties.name));if(level==='city'){for(const q of (typeof points!=='undefined'?points:[])){if(!q||!q.count||!q.name||fnames.has(q.name)||!validCoord(q))continue;entries.push({f:null,name:q.name,pt:[+q.lat,+q.lon],lit:true,cap:false,adcode:0});}}const sp=n=>n==='南昌市'||n==='南昌';entries.sort((a,b)=>{if(a.lit!==b.lit)return a.lit?-1:1;if(level==='city'){const sa=sp(a.name),sb=sp(b.name);if(a.lit){if(sa!==sb)return sa?-1:1;if(a.cap!==b.cap)return a.cap?-1:1;return a.adcode-b.adcode;}if(a.cap!==b.cap)return a.cap?-1:1;return a.adcode-b.adcode;}return 0;});if(level==='city')entries=entries.filter(e=>e.lit);const placed=[];for(const en of entries){const{f,name}=en;let c=f?labelPoint(f):en.pt;let bounds=null;if(level==='shanghai'){if(c)c=gcjToWgs(...c);}else try{bounds=L.geoJSON(f).getBounds();}catch{}if(!c&&bounds&&bounds.isValid())c=bounds.getCenter();if(!c)continue;const pt=map.latLngToContainerPoint(c);if(pt.x<0||pt.y<0||pt.x>size.x||pt.y>size.y)continue;const allowSmall=level==='shanghai'||en.lit||en.cap||/香港|澳门/.test(name);if(!allowSmall&&bounds&&bounds.isValid()){const nw=map.latLngToContainerPoint(bounds.getNorthWest()),se=map.latLngToContainerPoint(bounds.getSouthEast());if(Math.abs(se.x-nw.x)<20||Math.abs(se.y-nw.y)<11)continue;}const text=shortRegionName(name);const font=level==='shanghai'?13:12,w=text.length*(font+1)+8;if(placed.some(p=>Math.abs(p.x-pt.x)<(p.w+w)/2&&Math.abs(p.y-pt.y)<16))continue;placed.push({x:pt.x,y:pt.y,w});const cls='region-label'+(en.lit&&level==='city'?' visited-label':!en.lit?' unlit':'');const mk=L.marker(c,{pane:regionLabelPane,icon:L.divIcon({className:cls,html:E(text),iconSize:[w,font+4],iconAnchor:[w/2,(font+4)/2]}),interactive:false,keyboard:false}).addTo(map);regionLabels.push(mk);}if(level==='shanghai')renderShanghaiFeatureLabels(placed,size);}
 function capitalCoord(prov){if(MUNI.includes(prov)){const cf=(china?.features||[]).find(f=>f.properties.name===prov);return cf&&cf.properties.center?[cf.properties.center[1],cf.properties.center[0]]:null;}const cap=CAPITALS[prov];if(!cap||!cityBoundaries)return null;const f=cityBoundaries.features.find(x=>x.properties.name===cap&&x.properties.province===prov);return f&&f.properties.center?[f.properties.center[1],f.properties.center[0]]:null;}
 function renderCapitals(level){if(!china)return;if(level==='province'){for(const pf of china.features){const prov=pf.properties.name;if(!prov||prov==='北京市')continue;const c=capitalCoord(prov);if(!c)continue;const mk=L.circleMarker(c,{radius:3,color:'#fff',weight:1,fillColor:colors().accent,fillOpacity:1}).addTo(map);mk.bindTooltip(E(CAPITALS[prov]||prov),{className:'atlas-tooltip',direction:'top'});overviewLayers.push(mk);}}if(level==='province'||level==='country'){const bj=capitalCoord('北京市');if(bj){const star=L.marker(bj,{icon:L.divIcon({className:'capital-star',html:'★',iconSize:[18,18],iconAnchor:[9,9]}),interactive:true}).addTo(map);star.bindTooltip('北京',{className:'atlas-tooltip',direction:'top'});overviewLayers.push(star);}}}
 let cityOutlineLayer, cityOutlineStyle;
@@ -777,7 +829,17 @@ function drawOverview(){
  renderRegionLabels();
  if(level==='city')loadVisitedCityBoundaries();
 }
-$('provider').onchange=()=>setProvider();map.on('zoomend',()=>{if(mapLevel()!=='place')renderRegionLabels();});map.on('moveend',()=>{if(mapLevel()!=='place')renderRegionLabels();});if($('heatmap'))$('heatmap').onchange=()=>draw();if($('aggregate'))$('aggregate').onchange=()=>draw();document.querySelectorAll('.unit-toggle [data-unit]').forEach(b=>b.onclick=()=>{$('timeunit').value=b.dataset.unit;document.querySelectorAll('.unit-toggle [data-unit]').forEach(x=>x.classList.toggle('active',x===b));syncYears();});
+$('provider').onchange=()=>setProvider();
+map.on('zoom',event=>{
+ if(event.pinch&&mapLevel()!=='place')$('map').classList.add('vector-pinching');
+});
+function finishRegionZoom(){
+ if(mapLevel()!=='place')renderRegionLabels();
+ $('map').classList.remove('vector-pinching');
+}
+map.on('moveend',finishRegionZoom);
+$('map').addEventListener('touchcancel',finishRegionZoom);
+if($('heatmap'))$('heatmap').onchange=()=>draw();if($('aggregate'))$('aggregate').onchange=()=>draw();document.querySelectorAll('.unit-toggle [data-unit]').forEach(b=>b.onclick=()=>{$('timeunit').value=b.dataset.unit;document.querySelectorAll('.unit-toggle [data-unit]').forEach(x=>x.classList.toggle('active',x===b));syncYears();});
 const narrowDrawers=typeof matchMedia==='function'?matchMedia('(max-width:1280px)'):null;
 let rankDrawerOpen=true, lastOpenedDrawer='rank', drawerResizeTimer;
 function resizeMapForDrawers(){
@@ -817,6 +879,7 @@ function isMainland(lat,lon){if(!china||lon<72||lon>136||lat<17||lat>55)return f
 function applyTheme(key){
  currentTheme=resolveTheme(key);
  const theme=colors();
+ document.body.style.setProperty('--bar-match-ink',highlightLabelColor(theme));
  for(const [tone,value] of Object.entries(theme)){
   if(tone!=='name')document.body.style.setProperty('--'+(tone==='dark'?'deep':tone),value);
  }
@@ -1388,7 +1451,7 @@ function renderShanghaiFeatureLabels(placed,size){
   const icon=L.divIcon({className:'shanghai-feature-label '+className,
    html:'<span style="transform:translate(-50%,-50%) rotate('+angle+'deg)">'+E(name)+'</span>',
    iconSize:[0,0],iconAnchor:[0,0]});
-  regionLabels.push(L.marker(map.containerPointToLatLng(point),{icon,interactive:false,keyboard:false}).addTo(map));
+  regionLabels.push(L.marker(map.containerPointToLatLng(point),{pane:regionLabelPane,icon,interactive:false,keyboard:false}).addTo(map));
  }
  if(shanghaiLayerOptions.landmarks){
   for(const {name,coordinates:[lon,lat]} of shanghaiLandmarks.landmarks){

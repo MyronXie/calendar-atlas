@@ -16,4 +16,14 @@ export const palettes=Object.fromEntries(Object.entries(themeColors).map(([key,t
  ...theme,muted:lighten(theme.dark,.25),line:lighten(theme.mid,.58),
 }]));
 export function resolveTheme(value){return Object.hasOwn(palettes,value)?value:'green';}
+export function highlightLabelColor({highlight,dark}){
+ const luminance=color=>color.slice(1).match(/../g).reduce((sum,part,i)=>{
+  const channel=parseInt(part,16)/255;
+  const linear=channel<=.04045?channel/12.92:((channel+.055)/1.055)**2.4;
+  return sum+linear*[.2126,.7152,.0722][i];
+ },0);
+ const bg=luminance(highlight),foreground=luminance(dark);
+ if((Math.max(bg,foreground)+.05)/(Math.min(bg,foreground)+.05)>=4.5)return dark;
+ return bg>.179?'#000':'#fff';
+}
 export function coordinateLabel(p){if(!p||p.lat===''||p.lon===''||!Number.isFinite(+p.lat)||!Number.isFinite(+p.lon))return '';return Math.abs(+p.lat).toFixed(3)+'°'+(+p.lat<0?'S':'N')+','+Math.abs(+p.lon).toFixed(3)+'°'+(+p.lon<0?'W':'E');}
