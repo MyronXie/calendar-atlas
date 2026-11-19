@@ -14,8 +14,54 @@ function wrap(ctx,value,maxWidth){
  return rows;
 }
 
-function drawRouteMap(ctx,{points,lines,overview},palette,top){
- const height=355,margin=46;
+export async function captureTripMap(map,layer){
+ if(layer.isLoading()){
+  await new Promise(resolve=>{
+   const finish=()=>{
+    clearTimeout(timeout);
+    layer.off('load',finish);
+    resolve();
+   };
+   const timeout=setTimeout(finish,6500);
+   layer.once('load',finish);
+  });
+ }
+ const {x,y}=map.getSize(),side=Math.min(x,y);
+ if(!side||!layer.getContainer())return null;
+ const offsetX=(x-side)/2,offsetY=(y-side)/2;
+ const frame=map.getContainer().getBoundingClientRect();
+ const image=document.createElement('canvas');
+ image.width=image.height=side;
+ const ctx=image.getContext('2d',{willReadFrequently:true});
+ try{
+  for(const tile of layer.getContainer().querySelectorAll('.leaflet-tile-loaded')){
+   if(!tile.complete||!tile.naturalWidth)continue;
+   const rect=tile.getBoundingClientRect();
+   const left=Math.round(rect.left-frame.left-offsetX),top=Math.round(rect.top-frame.top-offsetY);
+   if(left>=side||left+rect.width<=0||top>=side||top+rect.height<=0)continue;
+   ctx.drawImage(tile,left,top,rect.width,rect.height);
+  }
+  const pixels=ctx.getImageData(0,0,side,side).data;
+  let filled=0;
+  for(let i=3;i<pixels.length;i+=4)if(pixels[i])filled++;
+  if(filled<side*side*.98)return null;
+ }catch{return null;}
+ const projected=new Map();
+ return {
+  image,
+  project(coord){
+   const key=coord.join(',');
+   if(!projected.has(key)){
+    const point=map.latLngToContainerPoint(coord);
+    projected.set(key,[(point.x-offsetX)*contentWidth/side,(point.y-offsetY)*contentWidth/side]);
+   }
+   return projected.get(key);
+  },
+ };
+}
+
+function drawRouteMap(ctx,{points,lines,overview,mapImage},palette,top){
+ const height=contentWidth,margin=58;
  const latitudes=points.map(point=>point.coord[0]);
  const longitudes=points.map(point=>point.coord[1]);
  const south=Math.min(...latitudes),north=Math.max(...latitudes);
@@ -24,7 +70,14 @@ function drawRouteMap(ctx,{points,lines,overview},palette,top){
  const lonFactor=Math.max(.01,Math.cos(latitude*Math.PI/180));
  const scale=Math.min((contentWidth-margin*2)/Math.max((east-west)*lonFactor,.003),
   (height-margin*2)/Math.max(north-south,.003));
- const project=([lat,lon])=>[width/2+(lon-longitude)*lonFactor*scale,top+height/2-(lat-latitude)*scale];
+ const project=coord=>{
+  if(mapImage){
+   const [x,y]=mapImage.project(coord);
+   return [padding+x,top+y];
+  }
+  const [lat,lon]=coord;
+  return [width/2+(lon-longitude)*lonFactor*scale,top+height/2-(lat-latitude)*scale];
+ };
  const badgesByCoordinate=new Map(points.map(({coord,badges})=>{
   const [x,y]=project(coord);
   const columns=Math.min(8,badges.size),rows=Math.ceil(badges.size/columns);
@@ -42,15 +95,10 @@ function drawRouteMap(ctx,{points,lines,overview},palette,top){
  ctx.clip();
  ctx.fillStyle=palette.soft;
  ctx.fillRect(padding,top,contentWidth,height);
- ctx.strokeStyle=palette.line;
- ctx.lineWidth=1;
- ctx.beginPath();
- for(let x=padding+40;x<padding+contentWidth;x+=40){ctx.moveTo(x,top);ctx.lineTo(x,top+height);}
- for(let y=top+40;y<top+height;y+=40){ctx.moveTo(padding,y);ctx.lineTo(padding+contentWidth,y);}
- ctx.stroke();
+ if(mapImage)ctx.drawImage(mapImage.image,padding,top,contentWidth,height);
  ctx.lineWidth=4;
  ctx.lineJoin='round';
- ctx.setLineDash([8,6]);
+ if(lines.length)ctx.setLineDash([8,6]);
  for(const {route,color,number} of lines){
   ctx.strokeStyle=color;
   ctx.beginPath();
@@ -79,21 +127,29 @@ function drawRouteMap(ctx,{points,lines,overview},palette,top){
    ctx.fillText(number,x,y,22);
   }
  }
+ if(mapImage){
+  const credit='© OpenStreetMap contributors · openstreetmap.org/copyright';
+  ctx.font=font(16,500);
+  ctx.textAlign='right';
+  ctx.fillStyle='#fffffff2';
+  ctx.fillRect(padding+contentWidth-ctx.measureText(credit).width-24,top+height-32,contentWidth,32);
+  ctx.fillStyle=palette.deep;
+  ctx.fillText(credit,padding+contentWidth-12,top+height-16);
+ }
  ctx.restore();
- return top+height;
 }
 
-export function drawTripShare({title,dates,partners,groups,points,lines,overview,showPlaces,palette}){
+export function drawTripShare({title,dates,partners,groups,points,lines,overview,showPlaces,palette,mapImage}){
  const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');
  const items=[];
  let y=padding;
- const label=(text,size,color,{weight=400,indent=0,maxLines=Infinity,step=size+10}={})=>{
+ const label=(text,size,color,{weight=400,indent=0,maxLines=Infinity,step=size+10,maxWidth=contentWidth-indent}={})=>{
   ctx.font=font(size,weight);
-  const rows=wrap(ctx,text,contentWidth-indent);
+  const rows=wrap(ctx,text,maxWidth);
   const visible=rows.slice(0,maxLines);
   if(rows.length>maxLines)visible[visible.length-1]+='…';
   for(const row of visible){
-   items.push({row,size,color,weight,indent,y});
+   items.push({row,size,color,weight,indent,y,maxWidth});
    y+=step;
   }
  };
@@ -103,10 +159,7 @@ export function drawTripShare({title,dates,partners,groups,points,lines,overview
  label(dates||'',23,palette.muted);
  if(partners.length)label('同伴：'+partners.join('、'),23,palette.muted,{maxLines:3});
  const mapTop=showPlaces&&points.length?y+16:null;
- if(mapTop!==null){
-  y=mapTop+370;
-  label('点位示意 · '+(overview?'编号为行程第几天':'编号为当天到访顺序')+(lines.length?' · 虚线为地点顺序':''),19,palette.muted);
- }
+ if(mapTop!==null)y=mapTop+contentWidth;
  y+=18;
  let shown=0;
  for(const {label:date,color,locations} of groups){
@@ -116,12 +169,26 @@ export function drawTripShare({title,dates,partners,groups,points,lines,overview
   if(!locations.length||!showPlaces){
    label(locations.length?locations.length+' 个地点':'暂无地点记录',22,palette.muted,{indent:16});
   }else{
-   for(const [i,location] of locations.entries()){
+   const stops=locations.map((location,i)=>(i+1)+'.  '+location.name+(location.located?'':'（未定位）'));
+   const gap=20,indent=12;
+   ctx.font=font(22);
+   const threeWidth=(contentWidth-indent-gap*2)/3;
+   const short=stops.filter(stop=>ctx.measureText(stop).width<=threeWidth).length;
+   const columns=Math.min(stops.length,short>=stops.length*.8?3:2);
+   const columnWidth=(contentWidth-indent-gap*(columns-1))/columns;
+   for(let i=0;i<stops.length;i+=columns){
     if(y>3650){
-     label('另有 '+(locations.length-i)+' 个地点',22,palette.muted,{indent:16});
+     label('另有 '+(stops.length-i)+' 个地点',22,palette.muted,{indent});
      break;
     }
-    label((i+1)+'.  '+location.name+(location.located?'':'（未定位）'),22,palette.deep,{indent:16,maxLines:3});
+    const startY=y;
+    let endY=y;
+    for(const [column,stop] of stops.slice(i,i+columns).entries()){
+     y=startY;
+     label(stop,22,palette.deep,{indent:indent+column*(columnWidth+gap),maxWidth:columnWidth,maxLines:3,step:30});
+     endY=Math.max(y,endY);
+    }
+    y=endY;
    }
   }
   y+=14;
@@ -134,12 +201,12 @@ export function drawTripShare({title,dates,partners,groups,points,lines,overview
  ctx.fillRect(0,0,width,canvas.height);
  ctx.fillStyle=palette.accent;
  ctx.fillRect(0,0,width,10);
- if(mapTop!==null)drawRouteMap(ctx,{points,lines,overview},palette,mapTop);
+ if(mapTop!==null)drawRouteMap(ctx,{points,lines,overview,mapImage},palette,mapTop);
  ctx.textBaseline='top';
- for(const {row,size,color,weight,indent,y} of items){
+ for(const {row,size,color,weight,indent,y,maxWidth} of items){
   ctx.font=font(size,weight);
   ctx.fillStyle=color;
-  ctx.fillText(row,padding+indent,y,contentWidth-indent);
+  ctx.fillText(row,padding+indent,y,maxWidth);
  }
  return canvas;
 }
