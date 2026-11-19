@@ -124,8 +124,8 @@ function eventEntities(names,kind,index,visible,expanded=false){
   +activeCriteria.some(c=>c.id===criterion(kind,name).id)+'">'+E(name)+'</button>').join('');
  const listId=isPlace?' id="eventplaces-'+index+'"':'';
  const icon='<svg class="event-entity-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+entityIcons[kind]+'</svg>';
- const more=isPlace?'<button type="button" class="event-places-more" data-place-toggle="'+index+'" aria-controls="eventplaces-'+index
-  +'" aria-expanded="'+expanded+'" aria-label="'+(expanded?'收起地点':'显示全部地点')+'" hidden>'+(expanded?'收起':'详细')+'</button>':'';
+ const more=isPlace?'<button type="button" class="event-action event-places-more" data-place-toggle="'+index+'" aria-controls="eventplaces-'+index
+  +'" aria-expanded="'+expanded+'" aria-label="'+(expanded?'收起地点':'展开地点')+'" hidden>'+(expanded?'收起':'展开')+'</button>':'';
  return '<div class="'+wrapper+'"'+hidden+'>'+icon+'<div class="event-entity-list"'+listId+'>'+links+'</div>'+more+'</div>';
 }
 let eventLayoutFrame=0;
@@ -170,14 +170,19 @@ function renderEvents(){
  container.classList.toggle('hide-people',!showPeople);
  container.innerHTML=rows.slice(0,limit).map((event,i)=>{
   const key=eventKey(event),open=openNotes.has(key);
-  const time=event.start.toLocaleDateString('zh-CN')+' '+event.start.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
-  const trip=isTrip(event)?'<button class="event-trip" data-trip-event="'+i+'" aria-label="查看行程详细">详细</button>':'';
+  const start=event.start,year=String(start.getFullYear());
+  const [month,date,hour,minute]=[start.getMonth()+1,start.getDate(),start.getHours(),start.getMinutes()]
+   .map(value=>String(value).padStart(2,'0'));
+  const shortDate=year.slice(-2)+'/'+month+'/'+date;
+  const time='<span class="event-date-full">'+year+'/'+month+'/'+date+'</span><span class="event-date-compact">'+shortDate
+   +'</span> <span class="event-clock">'+hour+':'+minute+'</span>';
+  const trip=isTrip(event)?'<button type="button" class="event-action event-trip" data-trip-event="'+i+'" aria-label="查看行程详细">详细</button>':'';
   return '<article class="event"><div class="eventrow"><button class="event-time" data-note="'+i+'" aria-expanded="'+open
    +'" aria-controls="eventnote-'+i+'" title="查看原始备注"><time datetime="'+event.start.toISOString()+'">'+time+'</time></button>'
-   +'<div class="eventname"><button class="eventtitle" data-filter-event="'+E(event.title)+'" title="按组别与事件筛选">'+E(event.title)+'</button>'+trip+'</div>'
+   +'<div class="event-details"><div class="eventname"><button class="eventtitle" data-filter-event="'+E(event.title)+'" title="按组别与事件筛选">'+E(event.title)+'</button>'+trip+'</div>'
    +eventEntities(event.places,'place',i,showPlaces,expandedEventPlaces.has(key))
    +eventEntities(event.partners,'person',i,showPeople)
-   +'</div><div class="eventnote" id="eventnote-'+i+'"'+(open?'':' hidden')+'>'+E(event.note||'无备注')+'</div></article>';
+   +'</div></div><div class="eventnote" id="eventnote-'+i+'"'+(open?'':' hidden')+'>'+E(event.note||'无备注')+'</div></article>';
  }).join('')||'<div class="empty">无事件</div>';
  $('more').hidden=rows.length<=limit;
  container.querySelectorAll('[data-place-toggle]').forEach(button=>button.onclick=()=>{
@@ -185,9 +190,9 @@ function renderEvents(){
   if(expanded)expandedEventPlaces.add(key);
   else expandedEventPlaces.delete(key);
   button.parentElement.classList.toggle('is-expanded',expanded);
-  button.textContent=expanded?'收起':'详细';
+  button.textContent=expanded?'收起':'展开';
   button.setAttribute('aria-expanded',String(expanded));
-  button.setAttribute('aria-label',expanded?'收起地点':'显示全部地点');
+  button.setAttribute('aria-label',expanded?'收起地点':'展开地点');
   scheduleEventLayout();
  });
  container.querySelectorAll('[data-note]').forEach(el=>el.onclick=()=>{

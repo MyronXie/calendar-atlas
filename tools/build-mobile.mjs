@@ -8,6 +8,7 @@ import {createHash} from 'node:crypto';
 import {atlasFiles,atlasDataDirectory} from '../atlas-data.mjs';
 import {partitionCityBoundaries} from '../city-boundary-data.mjs';
 import {palettes} from '../appearance.js';
+import {stampAppVersion} from '../app-version.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const out = path.join(root, 'mobile');
 const DATA_LESS = process.argv.includes('--data-less');
@@ -43,7 +44,7 @@ await fs.copyFile(path.join(root,'tools','mobile-data-provider.js'),path.join(ou
 await fs.copyFile(path.join(root, 'tools', 'mobile-readonly.js'), path.join(out, 'mobile-readonly.js'));
 
 // index.html: manifest + (data-less) data-provider + read-only shim
-let html = await rd('index.html');
+let html = await stampAppVersion(await rd('index.html'), root);
 const defaultCanvas=palettes.green.canvas;
 html = html.replace('</title>', '</title><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="'+defaultCanvas+'">');
 html = html.replace('<html lang="zh-CN">', '<html lang="zh-CN" data-mobile-source="'+(DATA_LESS?'import':'files')+'">');
