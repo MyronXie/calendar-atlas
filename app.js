@@ -8,7 +8,7 @@ import {placeTypes,placeIndex,regionFromAddress} from './place-categories.js';
 import {parseCalendar,expand,details,escape as E,validCoord} from './core.js';
 import {applyRules,gcjToWgs,normalizePlace,isPlaceExcluded,shortRegionName,geometryPolygons,containsPoint} from './organize.js';
 import {compareCalendars} from './calendar-import.js';
-import {isTrip,tripDates,tripDetails,tripPlace,tripSelectLabel} from './travel.js';
+import {isTrip,tripDates,tripDateRange,tripDetails,tripPlace,tripSelectLabel} from './travel.js';
 const sourceTimeIds = {calendar:'cal-version', places:'place-version', blacklist:'blacklist-version'};
 const mobileSource=document.documentElement?.dataset?.mobileSource;
 const mobileImport=mobileSource==='import';
@@ -707,7 +707,7 @@ function settingsDrawer(open,restoreFocus=true){
 }
 $('toggle-settings').onclick=()=>settingsDrawer(!settingsOpen);
 document.addEventListener?.('keydown',e=>{
- if(e.key!=='Escape'||document.querySelector('dialog[open],.annual-overlay:not([hidden])'))return;
+ if(e.key!=='Escape'||document.querySelector('dialog[open]'))return;
  if(settingsOpen&&(!rankDrawerOpen||lastOpenedDrawer==='settings'))settingsDrawer(false);
  else if(rankDrawerOpen)drawer(false);
 });
@@ -849,11 +849,10 @@ function annualYears(){
 }
 let annualAvailableYears=[];
 function renderAnnualYearSelect(year,custom){
- const years=[...new Set([year,...annualAvailableYears])].sort((a,b)=>b-a);
  const select=$('annual-year-select');
- select.innerHTML=(custom?'<option value="" disabled>跨年统计</option>':'')+
-  years.map(value=>'<option value="'+value+'">'+value+' 年度回顾</option>').join('');
- select.value=custom?'':String(year);
+ select.innerHTML='<option value="range">跨年统计</option>'+
+  annualAvailableYears.map(value=>'<option value="'+value+'">'+value+'年</option>').join('');
+ select.value=custom?'range':String(year);
 }
 function reviewEvents(from,to){
  if(from>=new Date(yearMin,0,1)&&to<new Date(yearMax+1,0,1)){
@@ -863,15 +862,19 @@ function reviewEvents(from,to){
  const events=expand(source,from,to,$('recurring').checked).events;
  return applyRules(events,rules,$('exclude').checked).events.filter(event=>event.start>=from&&event.start<=to);
 }
-let tripEvents=[],tripMap,tripMarkers,tripRoutes,tripLayerControl,tripShareData;
+let tripEvents=[],tripMap,tripTiles,tripMarkers,tripRoutes,tripLayerControl,tripShareData;
 let tripLinesEnabled=true;
 const tripColors=['#3d664e','#315987','#874939','#695087','#856020','#2e6a71'];
-function tripDayLabel(day,full=false){
+function tripDayLabel(day){
  if(day.number===null)return day.label;
- const [year,month,date]=day.label.split('-').map(Number);
- if(!full)return month+'月'+date+'日';
+ const [,month,date]=day.label.split('-').map(Number);
  const weekday='日一二三四五六'[new Date(day.label+'T00:00:00Z').getUTCDay()];
- return 'Day '+day.number+'：'+year+'年'+month+'月'+date+'日（'+weekday+'）';
+ return 'Day '+day.number+'：'+month+'月'+date+'日（'+weekday+'）';
+}
+function tripTabLabel(day){
+ if(day.number===null)return E(day.label);
+ const [,month,date]=day.label.split('-').map(Number);
+ return '<span class="trip-date-long">'+month+'月'+date+'日</span><span class="trip-date-short">'+month+'/'+date+'</span>';
 }
 const tripDayColor=day=>day.number===null?'#6b6761':tripColors[(day.number-1)%tripColors.length];
 function tripDayBadge(number){
@@ -886,11 +889,25 @@ function updateTripLines(){
  if(tripLinesEnabled)tripRoutes.addTo(tripMap);
  else tripMap.removeLayer(tripRoutes);
 }
+function fitTripMap(square){
+ if(!tripMap||!tripShareData?.points.length)return;
+ tripMap.invalidateSize({pan:false,animate:false});
+ const {x,y}=tripMap.getSize(),side=Math.min(x,y);
+ if(!side)return;
+ const gap=Math.min(28,side/5);
+ const padding=square?[(x-side)/2+gap,(y-side)/2+gap]:[gap,gap];
+ tripMap.fitBounds(tripShareData.points.map(point=>point.coord),{padding,maxZoom:15,animate:false});
+}
+const tripResize=typeof ResizeObserver==='function'?new ResizeObserver(()=>{
+ if(!tripMap)return;
+ if(!$('trip-share-options').hidden)fitTripMap(true);
+ else tripMap.invalidateSize({pan:false,animate:false});
+}):null;
 function renderTripDays(days,overview){
  const list=$('trip-locations'),canvas=$('trip-map');
  if(tripMarkers)tripMarkers.clearLayers();
  if(tripRoutes)tripRoutes.clearLayers();
- const groups=days.map(day=>({day,label:tripDayLabel(day,true),color:tripDayColor(day),locations:day.places.map(name=>{
+ const groups=days.map(day=>({day,label:tripDayLabel(day),color:tripDayColor(day),locations:day.places.map(name=>{
   const position=pos(name);
   return {name,position,located:position?.precision==='exact'&&validCoord(position)};
  })}));
@@ -916,15 +933,18 @@ function renderTripDays(days,overview){
  list.scrollTop=0;
  const points=[...pointsByCoordinate.values()];
  tripShareData={groups,points,lines,overview};
+ updateTripShareControls();
  const hasLocations=groups.some(group=>group.locations.length);
  canvas.hidden=!points.length;
  if(tripLayerControl)tripLayerControl.hidden=!lines.length;
  $('trip-status').textContent=!hasLocations?'暂无地点记录。':!points.length?'暂无已定位的地点。':'';
  if(!points.length)return;
- if(!tripMap){
-  tripMap=L.map('trip-map',{zoomAnimation:false,scrollWheelZoom:false}).setView(points[0].coord,14);
+ const initialize=!tripMap;
+ if(initialize){
+  tripMap=L.map('trip-map',{zoomAnimation:false,fadeAnimation:false,scrollWheelZoom:false}).setView(points[0].coord,14);
   const {url,options}=basemaps.osm;
-  L.tileLayer(url,{maxZoom:18,...options}).addTo(tripMap);
+  tripTiles=L.tileLayer(url,{maxZoom:18,...options,crossOrigin:true});
+  tripResize?.observe(canvas);
   tripRoutes=L.layerGroup();
   tripMarkers=L.layerGroup().addTo(tripMap);
   const layerMenu=L.control({position:'topright'});
@@ -947,8 +967,8 @@ function renderTripDays(days,overview){
   const icon=L.divIcon({className:'trip-pin',html,iconSize:[width,22],iconAnchor:[width/2,11]});
   L.marker(coord,{icon,alt:names.join('、')}).bindTooltip(names.map(E).join('<br>'),{direction:'top'}).addTo(tripMarkers);
  }
- tripMap.invalidateSize({pan:false});
- tripMap.fitBounds(points.map(point=>point.coord),{padding:[24,24],maxZoom:15,animate:false});
+ fitTripMap(!$('trip-share-options').hidden);
+ if(initialize)tripTiles.addTo(tripMap);
 }
 function renderTrip(event){
  const title=$('trip-title'),summary=$('trip-summary'),tabs=$('trip-day-tabs');
@@ -963,11 +983,12 @@ function renderTrip(event){
   return;
  }
  const {start,end,days}=tripDetails(event);
- summary.textContent=(start===end?start:start+' 至 '+end)
+ summary.textContent=tripDateRange(start,end)
   +(event.partners.length?' · 同伴：'+event.partners.join('、'):'');
  const overview=start!==end;
  tabs.innerHTML=(overview?'<button type="button" data-trip-day="-1" aria-pressed="true">总览</button>':'')
-  +days.map((day,i)=>'<button type="button" data-trip-day="'+i+'" aria-pressed="'+!overview+'">'+E(tripDayLabel(day))+'</button>').join('');
+  +days.map((day,i)=>'<button type="button" data-trip-day="'+i+'" aria-pressed="'+!overview+'">'+tripTabLabel(day)+'</button>').join('');
+ tabs.scrollLeft=0;
  for(const button of tabs.querySelectorAll('[data-trip-day]')){
   button.onclick=()=>{
    for(const other of tabs.querySelectorAll('[data-trip-day]'))other.setAttribute('aria-pressed',String(button===other));
@@ -985,37 +1006,46 @@ function setTripShareOpen(open){
   $('trip-share-people').checked=false;
   $('trip-share-status').textContent='';
  }
+ if(open)$('trip-share-lines').checked=tripLinesEnabled;
+ updateTripShareControls();
 }
-$('trip-share').onclick=()=>setTripShareOpen($('trip-share-options').hidden);
+function updateTripShareControls(){
+ $('trip-share-lines').disabled=!$('trip-share-places').checked||!tripShareData?.lines.length;
+}
+$('trip-share').onclick=()=>{
+ const open=$('trip-share-options').hidden;
+ setTripShareOpen(open);
+ fitTripMap(open);
+};
+$('trip-share-places').onchange=updateTripShareControls;
 $('trip-share-save').onclick=async()=>{
  const button=$('trip-share-save'),status=$('trip-share-status');
  const event=tripEvents[Number($('trip-choice').value)];
  if(!event||!tripShareData)return;
- const {groups,points,lines,overview}=tripShareData;
+ const data=tripShareData;
+ const {groups,points,lines,overview}=data;
  const showPlaces=$('trip-share-places').checked;
  const partners=$('trip-share-people').checked?event.partners:[];
  const {start,end}=tripDates(event);
- const dates=overview?start+' 至 '+end:groups[0]?.label;
+ const dates=overview?tripDateRange(start,end):groups[0]?.day.label;
  const css=getComputedStyle($('trip-dialog'));
- const palette=Object.fromEntries(['deep','muted','soft','accent','line'].map(key=>[key,css.getPropertyValue('--'+key).trim()]));
+ const palette=Object.fromEntries(['deep','muted','soft','accent'].map(key=>[key,css.getPropertyValue('--'+key).trim()]));
  const title=tripPlace(event);
- const routes=tripLinesEnabled?lines:[];
+ const routes=$('trip-share-lines').checked?lines:[];
+ const map=showPlaces&&points.length?tripMap:null,tiles=tripTiles;
  button.disabled=true;
  status.textContent='正在生成…';
  try{
-  const {drawTripShare}=await import('./trip-share.js');
-  const canvas=drawTripShare({title,dates,partners,groups,points,lines:routes,overview,showPlaces,palette});
-  const png=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
-  if(!png)throw new Error('PNG export failed');
-  const url=URL.createObjectURL(png);
-  const link=document.createElement('a');
-  link.href=url;
-  link.download=title+'_'+(overview?start+'_'+end:groups[0]?.day.label||start)+'.png';
-  link.click();
-  setTimeout(()=>URL.revokeObjectURL(url),30000);
-  status.textContent='PNG 已生成。';
+  const {drawTripShare,captureTripMap}=await import('./trip-share.js');
+  if(data!==tripShareData)return;
+  if(map)fitTripMap(true);
+  const mapImage=map?await captureTripMap(map,tiles):null;
+  if(data!==tripShareData)return;
+  const canvas=drawTripShare({title,dates,partners,groups,points,lines:routes,overview,showPlaces,palette,mapImage});
+  await downloadPng(canvas,title+'_'+(overview?start+'_'+end:groups[0]?.day.label||start));
+  status.textContent=map&&!mapImage?'已导出。底图暂不可用，已保留点位。':'已生成 PNG 图片';
  }catch{
-  status.textContent='生成失败，请重试。';
+  status.textContent='图片导出失败，请重试';
  }finally{
   button.disabled=false;
  }
@@ -1041,8 +1071,9 @@ $('trip-choice').onchange=()=>renderTrip(tripEvents[Number($('trip-choice').valu
 $('trip-close').onclick=()=>$('trip-dialog').close();
 $('trip-dialog').onclose=()=>{
  if($('trip-dialog').open)return;
+ tripResize?.disconnect();
  if(tripMap)tripMap.remove();
- tripMap=tripMarkers=tripRoutes=tripLayerControl=tripShareData=null;
+ tripMap=tripTiles=tripMarkers=tripRoutes=tripLayerControl=tripShareData=null;
 };
 function summarizeReview(events){
  const days=new Set(),places=new Map(),partners=new Set();
@@ -1358,10 +1389,6 @@ function annualStats(period){
   top:[...places].sort((a,b)=>b[1]-a[1]).slice(0,5)
  };
 }
-function closeAnnual(){
- $('annual-review').hidden=true;
- $('annual').focus();
-}
 function reviewStatCards(stats){
  return stats.map(([label,value,detail,help])=>'<div class="annual-stat"><b>'+value
   +(detail?' <small'+(help?' title="'+E(help)+'" aria-label="'+E(help+' '+detail)+'"':'')+'>'+E(detail)+'</small>':'')
@@ -1405,17 +1432,14 @@ function editMetroExpense(filename){
  };
  return ()=>amount;
 }
-function renderAnnual(year){
+function renderAnnual(year,custom=$('annual-year-select').value==='range'){
  const overlay=$('annual-review');
  overlay.dataset.year=year;
- const custom=overlay.dataset.mode==='range';
- const bounds=annualYears();
- $('annual-prev').disabled=year<=bounds.min;
- $('annual-next').disabled=year>=bounds.max;
+ const index=annualAvailableYears.indexOf(year);
+ $('annual-prev').disabled=index>=annualAvailableYears.length-1;
+ $('annual-next').disabled=index<=0;
  $('annual-prev').hidden=$('annual-next').hidden=custom;
  $('annual-range-controls').hidden=!custom;
- $('annual-mode').textContent=custom?'返回年度回顾':'跨年统计';
- $('annual-mode').setAttribute('aria-pressed',String(custom));
  $('annual-title').textContent=custom?'跨年统计':year+' 年度回顾';
  renderAnnualYearSelect(year,custom);
  $('annual-status').textContent='';
@@ -1441,7 +1465,7 @@ function renderAnnual(year){
   +'<div class="annual-legend">'+annualLegend.map((label,i)=>'<span><i style="background:'+E([palette.soft,palette.mid,palette.accent][i])+'"></i>'+label+'</span>').join('')
   +'</div></div><div class="annual-map-frame"><canvas id="annual-map" role="img" aria-label="'+E('全国足迹，'+report.coverage)+'"></canvas>'
   +'<div class="annual-national-toggles">'+toggle('annual-include-south-china-sea','includeSouthChinaSea','南海诸岛')
-  +toggle('annual-focus-visited','focusVisitedCities','聚焦到访城市')+'</div></div>'
+  +toggle('annual-focus-visited','focusVisitedCities','聚焦到访')+'</div></div>'
   +'<div class="annual-map-head"><h3>上海足迹：<span>'+emphasizeNumbers(report.shanghaiCoverage)+'</span></h3><span class="annual-map-credit">'+shanghaiAttribution+'</span></div>'
   +'<div class="annual-map-frame"><canvas id="annual-shanghai-map" role="img" aria-label="'+E('上海足迹，'+report.shanghaiCoverage)+'"></canvas>'
   +toggle('annual-include-chongming','includeChongming','崇明区')
@@ -1454,7 +1478,12 @@ function renderAnnual(year){
   +'<section><h3>'+(highlight?'<i class="annual-top-dot" style="background:'+palette.highlight+'" aria-hidden="true"></i>':'')
   +'常去地点 Top 5</h3>'+rows(report.top)+'</section></div>';
  const nationalMap=$('annual-map'), shanghaiMap=$('annual-shanghai-map');
- const renderNational=()=>drawAnnualMap(nationalMap,china,cityBoundaries,report.visits,palette,reviewMapOptions.includeSouthChinaSea,reviewMapOptions.focusVisitedCities);
+ const renderNational=()=>{
+  const {focusVisitedCities,includeSouthChinaSea}=reviewMapOptions;
+  $('annual-include-south-china-sea').disabled=focusVisitedCities;
+  drawAnnualMap(nationalMap,china,cityBoundaries,report.visits,palette,
+   focusVisitedCities||includeSouthChinaSea,focusVisitedCities);
+ };
  const renderShanghai=()=>drawShanghaiMap(shanghaiMap,cityBoundaries,shanghaiLandmarks,report.shanghaiPoints,
   {includeChongming:reviewMapOptions.includeChongming,innerRing:reviewMapOptions.innerRing,topPlaces,palette});
  renderNational();
@@ -1463,6 +1492,7 @@ function renderAnnual(year){
   const control=$(id);
   control.checked=reviewMapOptions[key];
   control.onchange=()=>{
+   if(control.disabled)return;
    reviewMapOptions[key]=control.checked;
    try{localStorage.setItem('atlas-review-map-options',JSON.stringify(reviewMapOptions));}catch{}
    if(key==='includeChongming'){
@@ -1485,76 +1515,79 @@ function renderAnnual(year){
   return exportAnnual({...report,stats,highlight},nationalMap,shanghaiMap,palette);
  };
 }
+async function downloadPng(image,filename){
+ const png=await new Promise(resolve=>image.toBlob(resolve,'image/png'));
+ if(!png)throw Error('PNG 编码失败');
+ const url=URL.createObjectURL(png);
+ const link=document.createElement('a');
+ link.download=filename+'.png';
+ link.href=url;
+ // A native modal makes the surrounding page inert.
+ (document.querySelector('dialog[open]')||document.body).append(link);
+ link.click();
+ link.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),30000);
+}
 async function exportAnnual(report,nationalMap,shanghaiMap,palette){
  const status=$('annual-status');
  try{
   const image=document.createElement('canvas');
   drawAnnualImage(image,report,nationalMap,shanghaiMap,palette);
-  const png=await new Promise(resolve=>image.toBlob(resolve,'image/png'));
-  if(!png)throw Error('PNG 编码失败');
-  const url=URL.createObjectURL(png);
-  const link=document.createElement('a');
-  link.download=report.filename+'.png';
-  link.href=url;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),30000);
+  await downloadPng(image,report.filename);
   status.textContent='已生成 PNG 图片';
  }catch{
   status.textContent='图片导出失败，请重试';
  }
 }
-async function openAnnualReview(year){
+let annualOpenRequest=0;
+async function openAnnualReview(){
  const overlay=$('annual-review');
- overlay.hidden=false;
- overlay.dataset.mode='year';
+ if(overlay.open)return;
+ const request=++annualOpenRequest;
+ const {min,max}=annualYears();
+ const year=annualAvailableYears[0]??max;
  $('annual-range-controls').hidden=true;
- $('annual-close').focus();
  $('annual-title').textContent=year+' 年度回顾';
+ if(!annualAvailableYears.length)annualAvailableYears=[year];
  renderAnnualYearSelect(year,false);
  $('annual-body').textContent='';
- for(const id of ['annual-prev','annual-next','annual-export','annual-mode','annual-year-select'])$(id).disabled=true;
+ for(const id of ['annual-prev','annual-next','annual-export','annual-year-select']){
+  $(id).disabled=true;
+  $(id).hidden=false;
+ }
  $('annual-status').textContent='正在加载地图边界…';
+ overlay.showModal();
  try{
   await Promise.all([loadCityBoundaries(),loadShanghaiLandmarks()]);
-  if(!overlay.hidden){
-   const {min,max}=annualYears();
+  if(overlay.open&&request===annualOpenRequest){
    const events=reviewEvents(new Date(min+'-01-01T00:00:00'),new Date(max+'-12-31T23:59:59.999'));
-   annualAvailableYears=[...new Set(events.map(event=>event.start.getFullYear()))];
-   $('annual-mode').disabled=$('annual-year-select').disabled=false;
-   renderAnnual(year);
+   annualAvailableYears=[...new Set(events.map(event=>event.start.getFullYear()))].sort((a,b)=>b-a);
+   if(!annualAvailableYears.length)annualAvailableYears=[year];
+   $('annual-year-select').disabled=false;
+   renderAnnual(annualAvailableYears[0],false);
   }
  }catch{
-  $('annual-status').textContent='地图边界加载失败，请关闭后重试';
+  if(overlay.open&&request===annualOpenRequest)$('annual-status').textContent='地图边界加载失败，请关闭后重试';
  }
 }
-$('annual').onclick=()=>{
- const {min,max}=annualYears();
- return openAnnualReview(Math.max(min,Math.min(max,new Date().getFullYear())));
-};
-$('annual-close').onclick=closeAnnual;
-$('annual-mode').onclick=()=>{
- const overlay=$('annual-review'),year=Number(overlay.dataset.year);
- const custom=overlay.dataset.mode!=='range';
- overlay.dataset.mode=custom?'range':'year';
+$('annual').onclick=openAnnualReview;
+$('annual-close').onclick=()=>$('annual-review').close();
+$('annual-year-select').onchange=event=>{
+ const custom=event.target.value==='range';
+ const year=custom?Number($('annual-review').dataset.year):Number(event.target.value);
  if(custom&&!$('annual-range-from').value){
   $('annual-range-from').value=Math.max(annualYears().min,year-1)+'-01-01';
   $('annual-range-to').value=year+'-12-31';
  }
- renderAnnual(year);
+ renderAnnual(year,custom);
 };
 $('annual-range-from').onchange=$('annual-range-to').onchange=()=>renderAnnual(Number($('annual-review').dataset.year));
-$('annual-year-select').onchange=event=>{
- const year=Number(event.target.value);
- if(!year)return;
- $('annual-review').dataset.mode='year';
- renderAnnual(year);
-};
-$('annual-review').onclick=e=>{if(e.target===$('annual-review'))closeAnnual();};
-$('annual-review').onkeydown=e=>{if(e.key==='Escape')closeAnnual();};
-for(const [id,step] of [['annual-prev',-1],['annual-next',1]]){
- $(id).onclick=()=>renderAnnual(Number($('annual-review').dataset.year)+step);
+for(const [id,step] of [['annual-prev',1],['annual-next',-1]]){
+ $(id).onclick=()=>{
+  const index=annualAvailableYears.indexOf(Number($('annual-review').dataset.year));
+  const year=annualAvailableYears[index+step];
+  if(year)renderAnnual(year,false);
+ };
 }
 async function startAtlas(){
  const [mapData,config,places,calendar]=await Promise.allSettled([

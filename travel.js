@@ -50,11 +50,17 @@ export function tripPlace(event){
  return name.replace(/之旅(?:\s|$|[（(]).*$/u,'').trim()||name;
 }
 
+const compactTripEnd=(start,end)=>start.slice(0,4)===end.slice(0,4)?end.slice(5):end;
+
 export function tripSelectLabel(event){
  const {start,end}=tripDates(event);
- const last=start.slice(0,4)===end.slice(0,4)?end.slice(5):end;
+ const last=compactTripEnd(start,end);
  const dates=start.replaceAll('-','/')+'-'+last.replaceAll('-','/');
- return [tripPlace(event),dates,event.partners?.join('/')].filter(Boolean).join('·');
+ return tripPlace(event)+'·'+dates;
+}
+
+export function tripDateRange(start,end){
+ return start===end?start:start+' 至 '+compactTripEnd(start,end);
 }
 
 export function tripDetails(event){
