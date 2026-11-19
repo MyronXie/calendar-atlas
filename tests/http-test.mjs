@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
+import {execFileSync,spawn} from 'node:child_process';
 import {once} from 'node:events';
 import fs from 'node:fs/promises';
 import net from 'node:net';
@@ -63,10 +63,17 @@ try{
  const backupDir=path.join(dir,'.backups');
  const [calendarBackup]= (await fs.readdir(backupDir)).filter(name=>name.startsWith('calendar.ics.'));
  assert.equal(await fs.readFile(path.join(backupDir,calendarBackup),'utf8'),text);
- for(const route of ['/','/app.js','/basemaps.js','/core.js','/organize.js','/vendor/leaflet.js','/style.css','/api/calendar']){
+ let appVersion='未标记';
+ try {
+  appVersion=execFileSync('git',['rev-parse','--short=7','HEAD'],{
+   cwd:new URL('../',import.meta.url),encoding:'utf8',stdio:['ignore','pipe','ignore'],
+  }).trim();
+ }catch{}
+ for(const route of ['/','/index.html','/app.js','/basemaps.js','/core.js','/organize.js','/vendor/leaflet.js','/style.css','/api/calendar']){
   const response=await request(route);
   assert.equal(response.status,200,route);
-  await response.arrayBuffer();
+  if(route==='/'||route==='/index.html')assert.ok((await response.text()).includes('<output id="app-version">'+appVersion+'</output>'));
+  else await response.arrayBuffer();
  }
  assert.equal((await request('/tools/place-sync.mjs')).status,404);
  const [index,part]=await Promise.all(['/data/city-index.json','/data/cities/31.json']
