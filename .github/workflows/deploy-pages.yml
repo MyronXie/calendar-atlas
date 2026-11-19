@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Run tests with synthetic data
+        run: npm test
       - name: Build mobile web app
         run: node tools/build-mobile.mjs --data-less
       - name: Check publication contents

@@ -102,6 +102,16 @@ function drawMapLabels(ctx,labels,view,{fontSize,leaders=false,offset=0,maxShift
   }
 }
 
+const nationalPaths=new WeakMap();
+function annualPaths(feature,includeSouthChinaSea){
+  let cached=nationalPaths.get(feature);
+  if(!cached){
+    cached={};
+    nationalPaths.set(feature,cached);
+  }
+  return cached[includeSouthChinaSea]??=projectPolygons(includeSouthChinaSea?polygons(feature):withoutSouthChinaSea(feature));
+}
+
 export function drawAnnualMap(canvas, provinces, boundaries, visits, palette, includeSouthChinaSea=true, focusVisitedCities=false) {
   const width = 1120, height = 810, padding = 24;
   canvas.width = width;
@@ -109,14 +119,14 @@ export function drawAnnualMap(canvas, provinces, boundaries, visits, palette, in
   const ctx = canvas.getContext('2d');
   const prepared = provinces.features.map(feature => ({
     name: feature.properties.name, center:feature.properties.center||feature.properties.centroid,
-    paths:projectPolygons(includeSouthChinaSea?polygons(feature):withoutSouthChinaSea(feature)),
+    paths:annualPaths(feature,includeSouthChinaSea),
   }));
   const litCities=(boundaries?.features||[]).flatMap(feature=>{
     const {name,province,center,centroid}=feature.properties;
     const key=cityKey(province,name);
     return visits.cities.has(key)?[{
       key,name,center:center||centroid,
-      paths:projectPolygons(includeSouthChinaSea?polygons(feature):withoutSouthChinaSea(feature)),
+      paths:annualPaths(feature,includeSouthChinaSea),
     }]:[];
   });
   const cityPoints=[...visits.cityPoints].filter(([,p])=>includeSouthChinaSea||!southChinaSeaPoint(p.lon,p.lat));

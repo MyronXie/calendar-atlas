@@ -1,0 +1,14 @@
+{
+  "blacklist": [
+    {"type":"event","enabled":"1","match_type":"exact","value":"Synthetic excluded event","reason":"Fixture"},
+    {"type":"place","enabled":"1","match_type":"exact","value":"Synthetic excluded place","reason":"Fixture"}
+  ],
+  "emojis": {
+    "defaultEmoji":"📍",
+    "typeEmojis":{"out":"🌳"},
+    "rules":[
+      {"scope":"event","keywords":["演唱会"],"emoji":"🎵"},
+      {"scope":"place","keywords":["寿司"],"emoji":"🍣"}
+    ]
+  }
+}
