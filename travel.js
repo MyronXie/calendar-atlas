@@ -1,4 +1,5 @@
 import {details} from './core.js';
+import {eventParts} from './filters.js';
 
 const dayMs=86400000;
 const dayOf=date=>Date.UTC(date.getFullYear(),date.getMonth(),date.getDate());
@@ -35,13 +36,25 @@ function heading(line,first,last){
 
 function dayRange(event){
  const first=dayOf(event.start);
- const last=dayOf(event.allDay&&event.end>event.start?new Date(+event.end-1):event.end||event.start);
+ const last=dayOf(event.end>event.start?new Date(+event.end-1):event.start);
  return [first,last];
 }
 
 export function tripDates(event){
  const [first,last]=dayRange(event);
  return {start:isoDay(first),end:isoDay(last)};
+}
+
+export function tripPlace(event){
+ const {name}=eventParts(event.title);
+ return name.replace(/之旅(?:\s|$|[（(]).*$/u,'').trim()||name;
+}
+
+export function tripSelectLabel(event){
+ const {start,end}=tripDates(event);
+ const last=start.slice(0,4)===end.slice(0,4)?end.slice(5):end;
+ const dates=start.replaceAll('-','/')+'-'+last.replaceAll('-','/');
+ return [tripPlace(event),dates,event.partners?.join('/')].filter(Boolean).join('·');
 }
 
 export function tripDetails(event){
