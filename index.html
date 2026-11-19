@@ -17,7 +17,13 @@
  <header class="atlas-dialog-head trip-dialog-head"><select id="trip-choice" aria-label="选择行程"></select><button id="trip-close" type="button">关闭</button></header>
  <h2 id="trip-title">旅游行程</h2>
  <div id="trip-summary"></div>
- <div class="trip-controls"><div id="trip-day-tabs" class="trip-day-tabs" role="group" aria-label="行程日期"></div><label id="trip-line-toggle" class="check" hidden><input id="trip-line" type="checkbox" checked>连线</label></div>
+ <div class="trip-controls"><div id="trip-day-tabs" class="trip-day-tabs" role="group" aria-label="行程日期"></div><button id="trip-share" type="button" aria-expanded="false" aria-controls="trip-share-options">分享图</button></div>
+ <div id="trip-share-options" class="trip-share-options" hidden>
+  <label class="check"><input id="trip-share-places" type="checkbox" checked>地点与地图</label>
+  <label class="check"><input id="trip-share-people" type="checkbox">同伴姓名</label>
+  <button id="trip-share-save" type="button">导出 PNG</button>
+  <small id="trip-share-status" role="status"></small>
+ </div>
  <div class="trip-content"><div id="trip-map" aria-label="行程地点地图"></div><div id="trip-locations" tabindex="0" aria-label="行程地点"></div></div>
  <p id="trip-status" role="status"></p>
 </dialog>

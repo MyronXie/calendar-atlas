@@ -8,7 +8,7 @@ import {placeTypes,placeIndex,regionFromAddress} from './place-categories.js';
 import {parseCalendar,expand,details,escape as E,validCoord} from './core.js';
 import {applyRules,gcjToWgs,normalizePlace,isPlaceExcluded,shortRegionName,geometryPolygons,containsPoint} from './organize.js';
 import {compareCalendars} from './calendar-import.js';
-import {isTrip,tripDates,tripDetails} from './travel.js';
+import {isTrip,tripDates,tripDetails,tripPlace,tripSelectLabel} from './travel.js';
 const sourceTimeIds = {calendar:'cal-version', places:'place-version', blacklist:'blacklist-version'};
 const mobileSource=document.documentElement?.dataset?.mobileSource;
 const mobileImport=mobileSource==='import';
@@ -863,7 +863,8 @@ function reviewEvents(from,to){
  const events=expand(source,from,to,$('recurring').checked).events;
  return applyRules(events,rules,$('exclude').checked).events.filter(event=>event.start>=from&&event.start<=to);
 }
-let tripEvents=[],tripMap,tripMarkers,tripRoutes;
+let tripEvents=[],tripMap,tripMarkers,tripRoutes,tripLayerControl,tripShareData;
+let tripLinesEnabled=true;
 const tripColors=['#3d664e','#315987','#874939','#695087','#856020','#2e6a71'];
 function tripDayLabel(day,full=false){
  if(day.number===null)return day.label;
@@ -882,21 +883,20 @@ function tripDayBadge(number){
 }
 function updateTripLines(){
  if(!tripRoutes)return;
- if($('trip-line').checked)tripRoutes.addTo(tripMap);
+ if(tripLinesEnabled)tripRoutes.addTo(tripMap);
  else tripMap.removeLayer(tripRoutes);
 }
-$('trip-line').onchange=updateTripLines;
 function renderTripDays(days,overview){
  const list=$('trip-locations'),canvas=$('trip-map');
  if(tripMarkers)tripMarkers.clearLayers();
  if(tripRoutes)tripRoutes.clearLayers();
- const groups=days.map(day=>({day,locations:day.places.map(name=>{
+ const groups=days.map(day=>({day,label:tripDayLabel(day,true),color:tripDayColor(day),locations:day.places.map(name=>{
   const position=pos(name);
   return {name,position,located:position?.precision==='exact'&&validCoord(position)};
  })}));
  const pointsByCoordinate=new Map(),lines=[];
- list.innerHTML=groups.map(({day,locations})=>{
-  const color=tripDayColor(day),route=[];
+ list.innerHTML=groups.map(({day,label,color,locations})=>{
+  const route=[];
   const stops=locations.map(({name,position,located},index)=>{
    if(located){
     const coord=[position.lat,position.lon],key=coord.join(',');
@@ -909,15 +909,16 @@ function renderTripDays(days,overview){
    }
    return '<li>'+E(name)+(located?'':' <small>未定位</small>')+'</li>';
   }).join('');
-  if(day.number!==null&&route.length>1)lines.push({route,color});
-  return '<details class="trip-group" open><summary><i style="background:'+color+'" aria-hidden="true"></i>'+E(tripDayLabel(day,true))
+  if(day.number!==null&&route.length>1)lines.push({route,color,number:day.number});
+  return '<details class="trip-group" open><summary><i style="background:'+color+'" aria-hidden="true"></i>'+E(label)
    +'</summary>'+(stops?'<ol>'+stops+'</ol>':'<p>暂无地点记录。</p>')+'</details>';
  }).join('');
  list.scrollTop=0;
  const points=[...pointsByCoordinate.values()];
+ tripShareData={groups,points,lines,overview};
  const hasLocations=groups.some(group=>group.locations.length);
  canvas.hidden=!points.length;
- $('trip-line-toggle').hidden=!lines.length;
+ if(tripLayerControl)tripLayerControl.hidden=!lines.length;
  $('trip-status').textContent=!hasLocations?'暂无地点记录。':!points.length?'暂无已定位的地点。':'';
  if(!points.length)return;
  if(!tripMap){
@@ -926,16 +927,24 @@ function renderTripDays(days,overview){
   L.tileLayer(url,{maxZoom:18,...options}).addTo(tripMap);
   tripRoutes=L.layerGroup();
   tripMarkers=L.layerGroup().addTo(tripMap);
+  const layerMenu=L.control({position:'topright'});
+  layerMenu.onAdd=()=>{
+   tripLayerControl=createMapLayerMenu('trip-layer-control',[['routes','连线']],()=>tripLinesEnabled,
+    (_,checked)=>{tripLinesEnabled=checked;},updateTripLines);
+   return tripLayerControl;
+  };
+  layerMenu.addTo(tripMap);
  }
+ tripLayerControl.hidden=!lines.length;
  for(const {route,color} of lines){
   L.polyline(route,{color,weight:3,opacity:.82,dashArray:'7 5',className:'trip-route-line',interactive:false}).addTo(tripRoutes);
  }
  updateTripLines();
  for(const {coord,badges,labels} of points){
   const html=[...badges].map(([number,color])=>'<span class="trip-pin-badge" style="background:'+color+'">'+number+'</span>').join('');
-  const width=badges.size*24+(badges.size-1)*2;
+  const width=badges.size*22+(badges.size-1)*2;
   const names=[...labels];
-  const icon=L.divIcon({className:'trip-pin',html,iconSize:[width,24],iconAnchor:[width/2,12]});
+  const icon=L.divIcon({className:'trip-pin',html,iconSize:[width,22],iconAnchor:[width/2,11]});
   L.marker(coord,{icon,alt:names.join('、')}).bindTooltip(names.map(E).join('<br>'),{direction:'top'}).addTo(tripMarkers);
  }
  tripMap.invalidateSize({pan:false});
@@ -943,6 +952,8 @@ function renderTripDays(days,overview){
 }
 function renderTrip(event){
  const title=$('trip-title'),summary=$('trip-summary'),tabs=$('trip-day-tabs');
+ $('trip-share').hidden=!event;
+ setTripShareOpen(false);
  title.textContent=event?.title||'旅游行程';
  if(!event){
   summary.innerHTML='';
@@ -954,17 +965,61 @@ function renderTrip(event){
  const {start,end,days}=tripDetails(event);
  summary.textContent=(start===end?start:start+' 至 '+end)
   +(event.partners.length?' · 同伴：'+event.partners.join('、'):'');
- tabs.innerHTML='<button type="button" data-trip-day="-1" aria-pressed="true">总览</button>'+
-  (start===end?'':days.map((day,i)=>'<button type="button" data-trip-day="'+i+'" aria-pressed="false">'+E(tripDayLabel(day))+'</button>').join(''));
+ const overview=start!==end;
+ tabs.innerHTML=(overview?'<button type="button" data-trip-day="-1" aria-pressed="true">总览</button>':'')
+  +days.map((day,i)=>'<button type="button" data-trip-day="'+i+'" aria-pressed="'+!overview+'">'+E(tripDayLabel(day))+'</button>').join('');
  for(const button of tabs.querySelectorAll('[data-trip-day]')){
   button.onclick=()=>{
    for(const other of tabs.querySelectorAll('[data-trip-day]'))other.setAttribute('aria-pressed',String(button===other));
    const index=Number(button.dataset.tripDay);
    renderTripDays(index===-1?days:[days[index]],index===-1);
+   $('trip-share-status').textContent='';
   };
  }
- renderTripDays(days,true);
+ renderTripDays(days,overview);
 }
+function setTripShareOpen(open){
+ $('trip-share').setAttribute('aria-expanded',String(open));
+ $('trip-share-options').hidden=!open;
+ if(!open){
+  $('trip-share-people').checked=false;
+  $('trip-share-status').textContent='';
+ }
+}
+$('trip-share').onclick=()=>setTripShareOpen($('trip-share-options').hidden);
+$('trip-share-save').onclick=async()=>{
+ const button=$('trip-share-save'),status=$('trip-share-status');
+ const event=tripEvents[Number($('trip-choice').value)];
+ if(!event||!tripShareData)return;
+ const {groups,points,lines,overview}=tripShareData;
+ const showPlaces=$('trip-share-places').checked;
+ const partners=$('trip-share-people').checked?event.partners:[];
+ const {start,end}=tripDates(event);
+ const dates=overview?start+' 至 '+end:groups[0]?.label;
+ const css=getComputedStyle($('trip-dialog'));
+ const palette=Object.fromEntries(['deep','muted','soft','accent','line'].map(key=>[key,css.getPropertyValue('--'+key).trim()]));
+ const title=tripPlace(event);
+ const routes=tripLinesEnabled?lines:[];
+ button.disabled=true;
+ status.textContent='正在生成…';
+ try{
+  const {drawTripShare}=await import('./trip-share.js');
+  const canvas=drawTripShare({title,dates,partners,groups,points,lines:routes,overview,showPlaces,palette});
+  const png=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
+  if(!png)throw new Error('PNG export failed');
+  const url=URL.createObjectURL(png);
+  const link=document.createElement('a');
+  link.href=url;
+  link.download=title+'_'+(overview?start+'_'+end:groups[0]?.day.label||start)+'.png';
+  link.click();
+  setTimeout(()=>URL.revokeObjectURL(url),30000);
+  status.textContent='PNG 已生成。';
+ }catch{
+  status.textContent='生成失败，请重试。';
+ }finally{
+  button.disabled=false;
+ }
+};
 function openTrips(selected){
  ensureTimeline();
  tripEvents=timelineEvents.filter(isTrip);
@@ -975,12 +1030,7 @@ function openTrips(selected){
  }
  const choice=$('trip-choice');
  choice.hidden=!tripEvents.length;
- choice.innerHTML=tripEvents.map((event,i)=>{
-  const {start,end}=tripDates(event);
-  const dateRange=start.replaceAll('-','/')+'-'+end.replaceAll('-','/');
-  const label=[event.title,dateRange,event.partners.join('/')].filter(Boolean).join('·');
-  return '<option value="'+i+'">'+E(label)+'</option>';
- }).join('');
+ choice.innerHTML=tripEvents.map((event,i)=>'<option value="'+i+'">'+E(tripSelectLabel(event))+'</option>').join('');
  choice.value=String(index);
  const dialog=$('trip-dialog');
  if(!dialog.open)dialog.showModal();
@@ -992,7 +1042,7 @@ $('trip-close').onclick=()=>$('trip-dialog').close();
 $('trip-dialog').onclose=()=>{
  if($('trip-dialog').open)return;
  if(tripMap)tripMap.remove();
- tripMap=tripMarkers=tripRoutes=null;
+ tripMap=tripMarkers=tripRoutes=tripLayerControl=tripShareData=null;
 };
 function summarizeReview(events){
  const days=new Set(),places=new Map(),partners=new Set();
@@ -1018,7 +1068,7 @@ function previousReviewYear(date){
  return new Date(year,month,day,date.getHours(),date.getMinutes(),date.getSeconds(),date.getMilliseconds());
 }
 let shanghaiLandmarks,shanghaiLandmarkRequest,shanghaiBase,shanghaiLayerControl,domesticLayerControl;
-function createMapLayerMenu(className,options,isChecked,onChange){
+function createMapLayerMenu(className,options,isChecked,onChange,redraw=draw){
  const control=L.DomUtil.create('details','leaflet-control map-layer-control '+className);
  control.hidden=true;
  control.innerHTML='<summary>图层</summary><div>'+options.map(([key,label,group])=>
@@ -1028,7 +1078,7 @@ function createMapLayerMenu(className,options,isChecked,onChange){
  for(const input of control.querySelectorAll('input'))input.checked=isChecked(optionKey(input));
  control.addEventListener('change',event=>{
   onChange(optionKey(event.target),event.target.checked);
-  draw();
+  redraw();
  });
  L.DomEvent.disableClickPropagation(control);
  L.DomEvent.disableScrollPropagation(control);
