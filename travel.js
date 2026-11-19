@@ -55,8 +55,44 @@ const compactTripEnd=(start,end)=>start.slice(0,4)===end.slice(0,4)?end.slice(5)
 export function tripSelectLabel(event){
  const {start,end}=tripDates(event);
  const last=compactTripEnd(start,end);
- const dates=start.replaceAll('-','/')+'-'+last.replaceAll('-','/');
+ const dates=start.slice(2).replaceAll('-','/')+
+  (start===end?'':'-'+(last===end?end.slice(2):last).replaceAll('-','/'));
  return tripPlace(event)+'·'+dates;
+}
+
+export function* occurrenceDays(events,from,to,splitTrips,keepOverlappingEvents=false){
+ const firstDay=dayOf(from),lastDay=dayOf(to);
+ for(const event of events){
+  const [first,last]=dayRange(event);
+  if(!splitTrips||first===last||!isTrip(event)){
+   if(first<=lastDay&&(first>=firstDay||keepOverlappingEvents&&last>=firstDay))yield {day:first,event,places:event.places};
+   continue;
+  }
+  const itinerary=tripDetails(event).days;
+  const scheduled=new Map(itinerary.filter(day=>day.number!==null).map(day=>[day.number,day.places]));
+  const assigned=new Set([...scheduled.values()].flat());
+  const undated=event.places.filter(name=>!assigned.has(name));
+  for(let day=Math.max(first,firstDay);day<=Math.min(last,lastDay);day+=dayMs){
+   const places=scheduled.get((day-first)/dayMs+1)||[];
+   yield {day,event,places:day===first?[...places,...undated]:places};
+  }
+ }
+}
+
+export function occurrenceCounts(rows,namesFor,mergeSameDay){
+ const counts=new Map(),seenByName=new Map();
+ for(const row of rows){
+  for(const name of new Set(namesFor(row))){
+   if(mergeSameDay){
+    if(!seenByName.has(name))seenByName.set(name,new Set());
+    const dates=seenByName.get(name);
+    if(dates.has(row.day))continue;
+    dates.add(row.day);
+   }
+   counts.set(name,(counts.get(name)||0)+1);
+  }
+ }
+ return counts;
 }
 
 export function tripDateRange(start,end){

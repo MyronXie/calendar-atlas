@@ -19,17 +19,19 @@ export async function captureTripMap(map,layer){
   await new Promise(resolve=>{
    const finish=()=>{
     clearTimeout(timeout);
-    layer.off('load',finish);
+    layer.off('load remove',finish);
     resolve();
    };
    const timeout=setTimeout(finish,6500);
-   layer.once('load',finish);
+   layer.once('load remove',finish);
   });
  }
  const {x,y}=map.getSize(),side=Math.min(x,y);
  if(!side||!layer.getContainer())return null;
  const offsetX=(x-side)/2,offsetY=(y-side)/2;
  const frame=map.getContainer().getBoundingClientRect();
+ const scaleX=frame.width/x,scaleY=frame.height/y;
+ if(!scaleX||!scaleY)return null;
  const image=document.createElement('canvas');
  image.width=image.height=side;
  const ctx=image.getContext('2d',{willReadFrequently:true});
@@ -37,9 +39,12 @@ export async function captureTripMap(map,layer){
   for(const tile of layer.getContainer().querySelectorAll('.leaflet-tile-loaded')){
    if(!tile.complete||!tile.naturalWidth)continue;
    const rect=tile.getBoundingClientRect();
-   const left=Math.round(rect.left-frame.left-offsetX),top=Math.round(rect.top-frame.top-offsetY);
-   if(left>=side||left+rect.width<=0||top>=side||top+rect.height<=0)continue;
-   ctx.drawImage(tile,left,top,rect.width,rect.height);
+   const left=Math.round((rect.left-frame.left)/scaleX-offsetX);
+   const top=Math.round((rect.top-frame.top)/scaleY-offsetY);
+   const right=Math.round((rect.right-frame.left)/scaleX-offsetX);
+   const bottom=Math.round((rect.bottom-frame.top)/scaleY-offsetY);
+   if(left>=side||right<=0||top>=side||bottom<=0)continue;
+   ctx.drawImage(tile,left,top,right-left,bottom-top);
   }
   const pixels=ctx.getImageData(0,0,side,side).data;
   let filled=0;
@@ -128,7 +133,7 @@ function drawRouteMap(ctx,{points,lines,overview,mapImage},palette,top){
   }
  }
  if(mapImage){
-  const credit='© OpenStreetMap contributors · openstreetmap.org/copyright';
+  const credit='© OpenStreetMap · openstreetmap.org/copyright';
   ctx.font=font(16,500);
   ctx.textAlign='right';
   ctx.fillStyle='#fffffff2';
@@ -139,7 +144,7 @@ function drawRouteMap(ctx,{points,lines,overview,mapImage},palette,top){
  ctx.restore();
 }
 
-export function drawTripShare({title,dates,partners,groups,points,lines,overview,showPlaces,palette,mapImage}){
+export function drawTripShare({title,dates,partners,groups,points,lines,overview,showPlaces,showMap,palette,mapImage}){
  const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');
  const items=[];
  let y=padding;
@@ -158,7 +163,7 @@ export function drawTripShare({title,dates,partners,groups,points,lines,overview
  label(title,50,palette.deep,{weight:700,maxLines:2});
  label(dates||'',23,palette.muted);
  if(partners.length)label('同伴：'+partners.join('、'),23,palette.muted,{maxLines:3});
- const mapTop=showPlaces&&points.length?y+16:null;
+ const mapTop=showMap&&points.length?y+16:null;
  if(mapTop!==null)y=mapTop+contentWidth;
  y+=18;
  let shown=0;
