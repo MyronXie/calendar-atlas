@@ -12,14 +12,19 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const out = path.join(root, 'mobile');
 const DATA_LESS = process.argv.includes('--data-less');
 const rd = (p) => fs.readFile(path.join(root, p), 'utf8');
+const appIcons = [
+  {src:'assets/icons/icon-192.png', sizes:'192x192', type:'image/png', purpose:'any'},
+  {src:'assets/icons/icon-512.png', sizes:'512x512', type:'image/png', purpose:'any maskable'},
+];
 const staticFiles = [
   'style.css', 'core.js', 'data-formats.js', 'place-categories.js', 'organize.js', 'basemaps.js', 'emoji.js', 'filters.js', 'appearance.js', 'timeline.js', 'annual-review.js',
   'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/leaflet.markercluster.js', 'vendor/MarkerCluster.css', 'vendor/MarkerCluster.Default.css', 'vendor/leaflet-heat.js', 'vendor/ical.min.js',
   'data/world.json', 'data/china.json', 'data/shanghai-landmarks.json',
+  'assets/icons/favicon-32.png', 'assets/icons/apple-touch-icon.png', ...appIcons.map(icon => icon.src),
 ];
 
 await fs.rm(out, { recursive: true, force: true });
-for (const dir of ['data', 'vendor']) await fs.mkdir(path.join(out, dir), { recursive: true });
+for (const dir of ['data', 'vendor', 'assets/icons']) await fs.mkdir(path.join(out, dir), { recursive: true });
 for (const file of staticFiles) await fs.copyFile(path.join(root, file), path.join(out, file));
 const fullBoundaries='data/city-boundaries.json';
 const {index,provinces}=partitionCityBoundaries(JSON.parse(await rd(fullBoundaries)));
@@ -47,7 +52,7 @@ await fs.writeFile(path.join(out, 'index.html'), html);
 
 await fs.writeFile(path.join(out, 'manifest.webmanifest'), JSON.stringify({
   name: '日历足迹（只读）', short_name: '足迹', start_url: './', display: 'standalone',
-  background_color: defaultCanvas, theme_color: defaultCanvas, lang: 'zh-CN', icons: []
+  background_color: defaultCanvas, theme_color: defaultCanvas, lang: 'zh-CN', icons: appIcons
 }, null, 2));
 
 // service worker
@@ -83,7 +88,7 @@ await fs.writeFile(path.join(out, 'sw.js'), sw);
 
 await fs.writeFile(path.join(out, 'serve.mjs'), `import http from 'node:http';import fs from 'node:fs/promises';import path from 'node:path';import {fileURLToPath} from 'node:url';
 const root=await fs.realpath(path.dirname(fileURLToPath(import.meta.url)));const port=Number(process.env.PORT)||8790;
-const MIME={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.csv':'text/csv; charset=utf-8','.ics':'text/calendar; charset=utf-8','.webmanifest':'application/manifest+json'};
+const MIME={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.csv':'text/csv; charset=utf-8','.ics':'text/calendar; charset=utf-8','.png':'image/png','.webmanifest':'application/manifest+json'};
 http.createServer(async(req,res)=>{
   if(!['GET','HEAD'].includes(req.method)){res.writeHead(405).end();return;}
   try{
