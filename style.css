@@ -107,17 +107,29 @@ dialog{width:520px;max-width:94vw;max-height:92vh;overflow:auto;padding:22px;bor
 .marker-cluster-small,.marker-cluster-medium,.marker-cluster-large{background:var(--mid)}.marker-cluster div{background:var(--accent);color:#fff;font-size:12px}
 .leaflet-popup-content{font:13px/1.8 'Segoe UI','Microsoft YaHei',sans-serif;overflow-wrap:anywhere}.leaflet-tooltip.atlas-tooltip{width:max-content!important;min-width:100px;max-width:min(420px,75vw)!important;white-space:normal!important;word-break:normal!important;overflow-wrap:break-word!important;writing-mode:horizontal-tb!important;font:13px/1.6 'Segoe UI','Microsoft YaHei',sans-serif;box-sizing:border-box}.leaflet-control-attribution{font-size:10px!important}
 /* Timeline: time selection is dark/light; non-time filters use contrast color. */
-.timeline-day{display:flex;align-items:start;flex-wrap:wrap;gap:12px}
-.timeline-day-range{flex:1 1 260px;min-width:0}
-.timeline-day-dates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
-.timeline-day-dates label{display:grid;gap:4px;font-size:12px}
-.timeline-day-dates input{min-width:0}
+#timeline-body{container:timeline-body / inline-size}
+.timeline-day{display:grid;grid-template-columns:minmax(0,1fr);align-items:end;gap:12px}
+.timeline-day-range{min-width:0}
+.timeline-day-dates{display:grid;grid-template-columns:minmax(0,1fr) 14px minmax(0,1fr);gap:5px}
+.timeline-day-dates label{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;contain:inline-size;gap:4px;margin:0;font-size:12px}
+.timeline-day-dates input{display:block;box-sizing:border-box;width:100%;max-width:100%;min-width:0;min-height:36px;margin:0;padding-inline:6px;overflow:hidden;-webkit-appearance:none;appearance:none}
+.timeline-day-dates input::-webkit-date-and-time-value{min-width:0;text-align:start;margin:0}
+.timeline-day-dates input::-webkit-datetime-edit{min-width:0;padding:0}
+.timeline-day-arrow{align-self:end;display:grid;place-items:center;height:36px;color:var(--muted)}
 #timeline-day-status{display:block;margin-top:5px;color:var(--highlight)}
-.timeline-day-stats{display:grid;flex:1 1 310px;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin:0}
-.timeline-day-stats div{display:grid;justify-items:center;align-content:center;min-height:60px;padding:5px 2px;background:var(--soft);border-radius:var(--radius)}
+.timeline-day-stats{display:grid;grid-template-columns:var(--day-stat-columns,repeat(4,minmax(0,1fr)));min-width:0;gap:5px;margin:0}
+.timeline-day-stats div{display:grid;grid-template-columns:minmax(0,1fr);justify-items:center;align-content:center;min-width:0;min-height:58px;padding:5px 4px;background:var(--soft);border-radius:var(--radius)}
 .timeline-day-stats dt{grid-row:2;font-size:12px;text-align:center}
-.timeline-day-stats dd{grid-row:1;margin:0;color:var(--deep);text-align:center;font-size:clamp(12px,2.8vw,17px);font-weight:650;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.timeline-day-stats dd{grid-row:1;width:100%;min-width:0;margin:0;color:var(--deep);text-align:center;font-size:17px;font-weight:650;font-variant-numeric:tabular-nums}
+.timeline-day-number{display:inline-block;white-space:nowrap}
 .timeline-day-hit{color:var(--highlight)}
+@container timeline-body (min-width:610px){
+ .timeline-day{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:16px}
+}
+@container timeline-body (max-width:255px){
+ .timeline-day-dates{grid-template-columns:minmax(0,1fr)}
+ .timeline-day-arrow{display:none}
+}
 .barcount,.bar-match-count{position:absolute;left:50%;z-index:2;font-size:11px;line-height:12px;font-variant-numeric:tabular-nums;white-space:nowrap;transform:translateX(-50%) scaleX(min(1,calc(var(--count-column,40) / var(--count-digits) / var(--count-character,6.4))))}
 .barcount{bottom:calc(100% + 3px)}
 .bar-match-count{bottom:calc(var(--matched-height) + 2px);color:var(--highlight);font-weight:650}
@@ -278,7 +290,6 @@ body:has(.trip-dialog[open],.annual-card[open]){overflow:hidden}
 .eventrow{--event-action-width:34px}
 .event-action{flex:none;width:var(--event-action-width);min-height:24px;height:24px;padding:0;font-size:11px;line-height:1}
 .event-time{white-space:nowrap;font-variant-numeric:tabular-nums}
-.event-date-compact{display:none}
 .evententities{position:relative;display:grid;grid-template-columns:16px minmax(0,1fr);gap:4px;--entity-line:24px}
 .event-entity-icon{align-self:start;margin-top:4px}
 .event-entity-list{min-width:0;line-height:var(--entity-line)}
@@ -288,7 +299,7 @@ body:has(.trip-dialog[open],.annual-card[open]){overflow:hidden}
 .event-places-more{position:absolute;right:0;top:0}
 #events-back-top{position:fixed;z-index:800;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));width:38px;height:38px;padding:0;border-radius:50%;color:var(--deep);background:var(--soft);box-shadow:0 2px 8px #0002;font-size:20px}
 @media(max-width:650px){
- .timeline-day{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+ .timeline-day{gap:8px}
  .timeline-day-dates input{font-size:16px}
  .maptools select{min-width:0;padding-inline:5px;font-size:12px}
  #level,#reset{flex:none}
@@ -297,9 +308,9 @@ body:has(.trip-dialog[open],.annual-card[open]){overflow:hidden}
  #reset .control-icon{display:block}
  .eventrow{grid-template-columns:max-content minmax(0,1fr);column-gap:8px}
  .event-time{line-height:1.4}
- .eventnote{padding-left:calc(8ch + 12px)}
- .event-date-full,.dialog-action .control-text,.trip-date-long{display:none}
- .event-date-compact,.event-clock{display:block}
+ .eventnote{padding-left:calc(10ch + 12px)}
+ .dialog-action .control-text,.trip-date-long{display:none}
+ .event-date,.event-clock{display:block}
  .dialog-action{display:grid;place-items:center;width:40px;height:36px;padding:0;flex:none}
  .dialog-action .control-icon,.trip-date-short{display:inline-block}
  .trip-dialog{padding:12px}

@@ -117,12 +117,32 @@ function renderDayStats(events,from,to,filtering){
  const summarize=records=>activityStats(records,[...occurrenceDays(records,from,to,split)]);
  const totals=summarize(events);
  const matches=filtering?summarize(filtered):null;
- $('timeline-day-stats').innerHTML=totals.map(([label,total],i)=>{
-  const count=matches?'<strong class="timeline-day-hit">'+matches[i][1]+'</strong><span aria-hidden="true"> / </span>'+total:total;
-  const description=matches?' aria-label="命中 '+matches[i][1]+'，共 '+total+'"':'';
-  return '<div><dt>'+label+'</dt><dd'+description+'>'+count+'</dd></div>';
+ const stats=$('timeline-day-stats'),labels=['事件','天数','地点','同伴'];
+ const weights=[];
+ stats.innerHTML=totals.map(([label,total],i)=>{
+  const hit=matches?.[i][1];
+  const count=matches?'<strong class="timeline-day-hit">'+hit+'</strong><span aria-hidden="true"> / </span>'+total:total;
+  const description=matches?' aria-label="命中 '+hit+'，共 '+total+'"':'';
+  const characters=String(total).length+(matches?String(hit).length+1:0);
+  weights.push('minmax(0,'+Math.max(5,characters)+'fr)');
+  return '<div><dt'+(label===labels[i]?'':' title="'+label+'"')+'>'+labels[i]+'</dt><dd'+description+'>'
+   +'<span class="timeline-day-number">'+count+'</span></dd></div>';
  }).join('');
+ stats.style.setProperty('--day-stat-columns',weights.join(' '));
+ fitDayStatValues();
 }
+function fitDayStatValues(){
+ const stats=$('timeline-day-stats');
+ if(!stats.clientWidth)return;
+ const values=[...stats.querySelectorAll('.timeline-day-number')];
+ for(const value of values)value.style.fontSize='';
+ const sizes=values.map(value=>{
+  const width=value.getBoundingClientRect().width,available=value.parentElement.clientWidth;
+  return width>available?Math.floor(parseFloat(getComputedStyle(value).fontSize)*available/width*10)/10:null;
+ });
+ for(const [i,size] of sizes.entries())if(size!==null)values[i].style.fontSize=size+'px';
+}
+if(typeof ResizeObserver==='function')new ResizeObserver(fitDayStatValues).observe($('timeline-day-stats'));
 function placeType(name){return baseCoords.get(normalizePlace(name))?.type?.trim() || 'other';}
 function typeLabel(type){return Object.hasOwn(placeTypes,type) ? placeTypes[type] : type;}
 const rankKinds={places:'place',types:'placeType',partners:'person',groups:'group'};
@@ -207,9 +227,7 @@ function renderEvents(){
   const start=event.start,year=String(start.getFullYear());
   const [month,date,hour,minute]=[start.getMonth()+1,start.getDate(),start.getHours(),start.getMinutes()]
    .map(value=>String(value).padStart(2,'0'));
-  const shortDate=year.slice(-2)+'/'+month+'/'+date;
-  const time='<span class="event-date-full">'+year+'/'+month+'/'+date+'</span><span class="event-date-compact">'+shortDate
-   +'</span> <span class="event-clock">'+hour+':'+minute+'</span>';
+  const time='<span class="event-date">'+year+'/'+month+'/'+date+'</span> <span class="event-clock">'+hour+':'+minute+'</span>';
   const trip=isTrip(event)?'<button type="button" class="event-action event-trip" data-trip-event="'+i+'" aria-label="查看行程详细">详细</button>':'';
   return '<article class="event"><div class="eventrow"><button class="event-time" data-note="'+i+'" aria-expanded="'+open
    +'" aria-controls="eventnote-'+i+'" title="查看原始备注"><time datetime="'+event.start.toISOString()+'">'+time+'</time></button>'
