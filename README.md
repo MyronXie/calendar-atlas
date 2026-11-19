@@ -1,6 +1,6 @@
 # 日历足迹 Calendar Atlas
 
-把 ICS 日历里的事件、地点和同伴整理到地图、时间轴、排行和年度回顾。桌面端和 Android 共用 `atlas-data/` 里的三份原文件。
+把 ICS 日历里的事件、地点和同伴整理到地图、时间轴、排行和年度回顾。桌面端、手机网页版和 Android 共用 `atlas-data/` 里的三份原文件。
 
 Windows 上安装 Node.js 22 或更新版本，在工程根目录的 `atlas-data/` 放入 `calendar.ics`、`place.csv` 和 `config.json`。双击 **启动足迹.cmd**，浏览器会打开 `http://127.0.0.1:8787/`。双击 **关闭足迹.cmd** 停止服务。桌面端无需安装 npm 依赖。
 
