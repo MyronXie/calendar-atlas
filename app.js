@@ -1,6 +1,6 @@
 import {annualLegend,cityKey,drawAnnualImage,drawAnnualMap,drawShanghaiMap,layoutMapLabels,mapAttribution,shanghaiDistricts,shanghaiMapPlaces,shanghaiMetroLayers,shanghaiName} from './annual-review.js';
 import {basemaps} from './basemaps.js';
-import {periodCounts,addMatches,barHeights,matchedLabelPlacement,frequencyBuckets,periodRange,dateBucket,dateBucketLabel,dateConditionLabels,dateBucketGroups} from './timeline.js';
+import {periodCounts,addMatches,barHeights,timelineCountLayout,frequencyBuckets,periodRange,dateBucket,dateBucketLabel,dateConditionGroups,dateBucketGroups} from './timeline.js';
 import {palettes,resolveTheme,coordinateLabel,highlightLabelColor} from './appearance.js';
 import {criterion,toggleCriterion,matchesFilters,matchesCriterionText,matchesCriterionDate,searchCriterion,criterionDisplay,eventParts,eventCriteria,rankSections,toggleRankHidden} from './filters.js';
 import {selectEmoji} from './emoji.js';
@@ -56,11 +56,10 @@ function setupGaz(){gaz=[];for(const f of world?.features||[]){const p=f.propert
 function locate(name){const m=name.match(/(?:geo:)?(-?\d{1,2}\.\d{3,})\s*[,，;]\s*(-?\d{1,3}\.\d{3,})/i);if(m&&validCoord({lat:m[1],lon:m[2]}))return {...inferRegion(+m[1],+m[2]),lat:+m[1],lon:+m[2],precision:'exact'};const key=normalizePlace(name);const base=baseCoords.get(key);if(base){if(!validCoord(base)){const approx=lookup([base.city,base.province,base.country].filter(Boolean).join(' '))||lookup(name);return approx?{...approx,...Object.fromEntries(['country','province','city'].filter(k=>base[k]).map(k=>[k,base[k]]))}:null;}let p={lat:Number(base.lat),lon:Number(base.lon),precision:'exact'};[p.lat,p.lon]=toWgs(p.lat,p.lon,base.datum||$('datum').value);const inferred=base.country&&base.province&&base.city?{}:inferRegion(p.lat,p.lon);return {...inferred,...Object.fromEntries(['country','province','city'].filter(k=>base[k]).map(k=>[k,base[k]])),...p};}return lookup(name);}
 function lookup(name){const s=normalize(name);let hits=gaz.filter(p=>p.terms.some(t=>{if(!t||t.length<2)return false;const term=normalize(t);if(s===term)return true;const official=/省$|市$|区$|县$|自治区$|特别行政区$/.test(t);return official&&s.startsWith(term);}));hits.sort((a,b)=>({city:3,province:2,country:1}[b.precision]-{city:3,province:2,country:1}[a.precision]));if(!hits.length)return null;const best=hits[0],peers=hits.filter(x=>x.precision===best.precision);if(peers.length>1){const qualified=peers.filter(x=>x.province&&s.includes(normalize(x.province.replace(/省|市/g,''))));if(qualified.length!==1)return null;return qualified[0];}return best;}
 let cache=new Map();function pos(name){if(!cache.has(name))cache.set(name,locate(name));return cache.get(name);}
-let timeMode='overview',overviewUnit='year',selectedRange=[],rangeCustomized=false;
+let timeMode='overview',overviewUnit='year',selectedRange=[];
 const focusView=()=>timeMode==='focus';
 const dateInputValue=date=>date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0');
-function setRecentRange(customized=false){
- rangeCustomized=customized;
+function setRecentRange(){
  const now=new Date(),from=new Date(now.getFullYear()-1,now.getMonth(),now.getDate()+1);
  selectedRange=[dateInputValue(from),dateInputValue(now)];
 }
@@ -88,9 +87,7 @@ function refresh({timeline=true,fitBeforeDraw=false}={}){
  appliedCriteria=draftCriterion&&!activeCriteria.some(c=>c.id===draftCriterion.id)?[...activeCriteria,draftCriterion]:activeCriteria;
  const dates=appliedCriteria.filter(c=>c.kind==='time');
  const others=appliedCriteria.filter(c=>c.kind!=='time');
- const timeFilterActive=rangeCustomized||dates.length>0;
- $('timeline-range-indicator').hidden=!timeFilterActive;
- $('timeline-range').setAttribute('aria-label','修改时间范围 '+rangeLabel+(timeFilterActive?'，已启用时间筛选':''));
+ $('timeline-range').setAttribute('aria-label','修改时间范围 '+rangeLabel);
  const scoped=dates.length?result.events.filter(event=>matchesFilters(event,dates,placeType)):result.events;
  filtered=others.length?scoped.filter(event=>matchesFilters(event,others,placeType)):scoped;
  countedRows=[...occurrenceDays(filtered,from,to,$('split-trip-days').checked,true)];
@@ -149,8 +146,21 @@ function activityStats(events,rows,places=new Set(rows.flatMap(row=>row.places))
  ];
 }
 function renderDateConditions(criteria){
- $('timeline-date-conditions').hidden=!criteria.length;
- $('timeline-date-labels').textContent=dateConditionLabels(criteria).join(' | ');
+ const chips=$('timeline-date-conditions'),indicator=$('timeline-range-indicator');
+ const groups=dateConditionGroups(criteria);
+ chips.hidden=indicator.hidden=!groups.length;
+ const description=groups.map(group=>group.label).join(' | ');
+ indicator.title=description;
+ indicator.setAttribute('aria-label','日期条件：'+description);
+ chips.innerHTML=groups.map(({label},index)=>'<button type="button" data-remove-date="'+index
+  +'" aria-label="'+E('移除日期条件：'+label)+'"><strong>'+E(label)+'</strong>'+entityIcon('dialog-close','filter-chip-dismiss')+'</button>').join('');
+ for(const button of chips.querySelectorAll('[data-remove-date]'))button.onclick=()=>{
+  const index=Number(button.dataset.removeDate),{scope,values}=groups[index];
+  activeCriteria=activeCriteria.filter(c=>c.kind!=='time'||c.scope!==scope||!values.includes(Number(c.value)));
+  refresh();
+  fitPoints();
+  (chips.querySelector('[data-remove-date="'+index+'"]')||chips.querySelector('[data-remove-date]')||$('timeline-range')).focus?.({preventScroll:true});
+ };
 }
 function renderTimeStats(events,scoped,matched,from,to){
  const split=$('split-trip-days').checked;
@@ -236,7 +246,7 @@ function clearDateConditions(){
  activeCriteria=activeCriteria.filter(c=>c.kind!=='time');
  refresh();
 }
-$('timeline-clear-dates').onclick=$('timeline-date-clear').onclick=clearDateConditions;
+$('timeline-clear-dates').onclick=clearDateConditions;
 function renderDateGroups(slots){
  const bar=$('focus-date-groups'),unit=focusUnit;
  const groups=dateBucketGroups(unit);
@@ -368,7 +378,6 @@ $('events-back-top').onclick=()=>scrollToHeading('collapse-eventlist');
 function selectEventRange(event){
  const {start,end}=tripDates(event);
  selectedRange=[start,end];
- rangeCustomized=true;
  if(collapsedSections.timeline){
   collapsedSections.timeline=false;
   localStorage.setItem('atlas-sections',JSON.stringify(collapsedSections));
@@ -804,17 +813,34 @@ for(const id of countOptionIds)$(id).onchange=()=>{
  refresh({timeline:id!=='merge-same-day'});
 };
 function ensureTimeline(){const key=JSON.stringify([source.length,yearMin,yearMax,$('recurring').checked,$('exclude').checked,rules,csvVersion]);if(key!==timelineKey){timelineEvents=applyRules(expand(source,new Date(yearMin,0,1),new Date(yearMax,11,31,23,59,59,999),$('recurring').checked).events,rules,$('exclude').checked,new Set()).events;timelineKey=key;}}
-function barDescription(label,total,matched,scoped,inRange){
- return label+(matched===null?'':' · 命中 '+matched)+(scoped===null?'':' · 日期条件 '+scoped)
-  +(inRange===undefined?'':' · 选中范围 '+inRange)+' · 共 '+total+' 条事件';
+const chartHeightInput=$('timeline-height');
+let chartHeight=Number(localStorage.getItem('atlas-timeline-height'))||150;
+chartHeight=Math.max(110,Math.min(230,chartHeight));
+chartHeightInput.value=chartHeight;
+function applyChartHeight(){
+ document.body.style.setProperty('--timeline-chart-height',chartHeight+'px');
+ $('timeline-height-label').textContent=chartHeight+' px';
 }
-function timelineBar({total,inRange,scoped,matched,peak,label,shortLabel,showCounts=true}){
- const range=barHeights(total,inRange,peak),dates=barHeights(total,scoped??0,peak),hit=barHeights(total,matched??0,peak);
- const placement=showCounts?matchedLabelPlacement(hit):'above';
- const count=(value,className)=>'<span class="'+className+'" style="--count-digits:'+String(value).length+'" aria-hidden="true">'+value+'</span>';
- return '<span class="bar-stack '+placement+'" style="height:'+range.total+'px;--range-height:'+range.matched+'px;--scoped-height:'+dates.matched+'px;--matched-height:'+hit.matched+'px">'
+applyChartHeight();
+chartHeightInput.oninput=()=>{
+ chartHeight=Number(chartHeightInput.value);
+ applyChartHeight();
+ if(focusView())renderFocusChart();
+ else renderOverviewChart();
+};
+chartHeightInput.onchange=()=>localStorage.setItem('atlas-timeline-height',String(chartHeight));
+function barDescription(label,total,matched,scoped){
+ return label+' · '+[matched,scoped,total].filter(value=>value!==null).join(' / ')+' 条事件';
+}
+function timelineBar({total,inRange,scoped,matched,peak,label,shortLabel}){
+ const plot=chartHeight-54;
+ const range=barHeights(total,inRange,peak,plot),dates=barHeights(total,scoped??0,peak,plot),hit=barHeights(total,matched??0,peak,plot);
+ const layout=timelineCountLayout(range.total,dates.matched,hit.matched);
+ const count=(value,className,position)=>position?'<span class="bar-number '+className+(position.inside?' inside':'')
+  +'" style="--count-digits:'+String(value).length+';bottom:'+position.bottom+'px" aria-hidden="true">'+value+'</span>':'';
+ return '<span class="bar-stack" style="height:'+range.total+'px;--range-height:'+range.matched+'px;--scoped-height:'+dates.matched+'px;--matched-height:'+hit.matched+'px">'
   +'<i class="bar-original"></i><i class="bar-range"></i>'+(scoped===null?'':'<i class="bar-scoped"></i>')+(matched===null?'':'<i class="bar-matched"></i>')
-  +(showCounts&&total?count(total,'barcount')+(hit.matched?count(matched,'bar-match-count'):''):'')
+  +(total?count(total,'barcount',layout.total)+count(scoped,'bar-date-count',layout.dated)+count(matched,'bar-match-count',layout.hit):'')
   +'</span>'+(label?'<span class="bar-label"><span class="year-full">'+label+'</span><span class="year-short" aria-hidden="true">'+shortLabel+'</span></span>':'');
 }
 const periodIndex=(date,monthly)=>Number(date.slice(0,4))*(monthly?12:1)+(monthly?Number(date.slice(5,7))-1:0);
@@ -842,10 +868,10 @@ function renderOverviewChart(){
   const hit=hasMatches?matched:null;
   const selected=index>=a&&index<=b;
   const dates=hasDates?scoped:null;
-  const description=barDescription(date,total,hit,dates,inRange);
+  const description=barDescription(date,total,hit,dates);
   return '<button type="button" class="yearbar '+(selected?'selected ':'')+(monthly&&index%12===0?'year-start':'')
    +'" data-period="'+index+'" data-total="'+total+'" data-matched="'+(hit??0)+'" aria-pressed="'+selected+'" title="'+description+'" aria-label="'+description+'">'
-   +timelineBar({total,inRange,scoped:dates,matched:hit,peak,label:monthly?'':date,shortLabel:'&#39;'+date.slice(-2),showCounts:!monthly})+'</button>';
+   +timelineBar({total,inRange,scoped:dates,matched:hit,peak,label:monthly?'':date,shortLabel:'&#39;'+date.slice(-2)})+'</button>';
  }).join('');
  for(const button of overviewBars.querySelectorAll('[data-period]'))button.onclick=event=>{
   const index=Number(button.dataset.period);
@@ -871,6 +897,7 @@ function fitOverviewChart(){
  if(!monthly)return;
  const labels=[];
  const unit=width/count;
+ $('timeline-track').classList.toggle('readable-counts',unit>=18);
  for(let start=min;start<=max;){
   const year=Math.floor(start/12),end=Math.min(max+1,(year+1)*12);
   const center=(start+end-2*min)*unit/2;
@@ -884,9 +911,8 @@ function fitOverviewChart(){
  $('timeline-month-axis').innerHTML=labels.map(({center,year,label})=>'<span data-axis-year="'+year+'" style="left:'+center+'px">'+label+'</span>').join('');
 }
 if(typeof ResizeObserver==='function')new ResizeObserver(fitOverviewChart).observe(overviewBars);
-function setTimeRange(start,end,customized=true){
+function setTimeRange(start,end){
  selectedRange=[start,end];
- rangeCustomized=customized;
  refresh();
 }
 function selectPeriods(first,last){
@@ -913,7 +939,7 @@ for(const unit of ['year','month'])$('timeline-overview-'+unit).onclick=()=>{
 };
 $('timeline-recent').onclick=()=>{
  if(!source.length)return;
- setRecentRange(true);
+ setRecentRange();
  refresh();
 };
 $('timeline-all').onclick=()=>{
@@ -925,8 +951,67 @@ $('timeline-all').onclick=()=>{
   first=Math.min(first,+event.start);
   last=Math.max(last,event.end>event.start?+event.end-1:+event.start);
  }
- setTimeRange(dateInputValue(new Date(first)),dateInputValue(new Date(Math.max(last,Date.now()))),false);
+ setTimeRange(dateInputValue(new Date(first)),dateInputValue(new Date(Math.max(last,Date.now()))));
 };
+
+let timelineHoldHideTimer;
+function enableTimelineHold(chart){
+ let gesture,handled;
+ const tip=$('timeline-hold-tip');
+ const hide=()=>{
+  tip.hidden=true;
+  clearTimeout(timelineHoldHideTimer);
+ };
+ const stop=()=>{
+  clearTimeout(gesture?.timer);
+  gesture=null;
+ };
+ chart.addEventListener('pointerdown',event=>{
+  hide();
+  stop();
+  handled=null;
+  if(event.pointerType!=='touch'||!event.isPrimary||!matchMedia('(orientation: portrait)').matches)return;
+  const bar=event.target.closest('.yearbar');
+  if(!bar)return;
+  gesture={id:event.pointerId,x:event.clientX,y:event.clientY,timer:setTimeout(()=>{
+   if(!bar.isConnected)return;
+   handled=event.pointerId;
+   tip.textContent=bar.title;
+   tip.hidden=false;
+   const {width,height}=tip.getBoundingClientRect(),rect=bar.getBoundingClientRect();
+   const left=Math.min(window.innerWidth-width-6,Math.max(6,rect.left+(rect.width-width)/2));
+   const top=event.clientY>height+20?event.clientY-height-12:event.clientY+14;
+   tip.style.left=left+'px';
+   tip.style.top=top+'px';
+   timelineHoldHideTimer=setTimeout(hide,2000);
+  },460)};
+ },true);
+ chart.addEventListener('pointermove',event=>{
+  if(gesture?.id!==event.pointerId)return;
+  if(Math.hypot(event.clientX-gesture.x,event.clientY-gesture.y)<5)return;
+  stop();
+  handled=null;
+  hide();
+ },true);
+ chart.addEventListener('pointerup',stop,true);
+ chart.addEventListener('pointercancel',()=>{
+  stop();
+  handled=null;
+  hide();
+ },true);
+ chart.addEventListener('click',event=>{
+  if(handled===null||handled===undefined||event.detail===0)return;
+  event.preventDefault();
+  event.stopPropagation();
+ },true);
+ chart.addEventListener('contextmenu',event=>{
+  if(gesture||handled!=null)event.preventDefault();
+ });
+ globalThis.addEventListener?.('scroll',hide,{passive:true});
+ return event=>handled!=null&&handled===event.pointerId;
+}
+const overviewHold=enableTimelineHold(overviewBars);
+enableTimelineHold($('day-frequency-bars'));
 
 let periodGesture;
 function periodAt(x){
@@ -962,7 +1047,7 @@ overviewBars.onpointerup=event=>{
  const {start,dragged}=periodGesture;
  periodGesture=null;
  overviewBars.classList.remove('choosing-range');
- selectPeriods(start,dragged?periodAt(event.clientX):start);
+ if(!overviewHold(event))selectPeriods(start,dragged?periodAt(event.clientX):start);
 };
 overviewBars.onpointercancel=overviewBars.onlostpointercapture=()=>{
  if(!periodGesture)return;
@@ -1201,8 +1286,12 @@ function isMainland(lat,lon){if(!china||lon<72||lon>136||lat<17||lat>55)return f
 function applyTheme(key){
  currentTheme=resolveTheme(key);
  const theme=colors();
- document.body.style.setProperty('--bar-match-ink',highlightLabelColor(theme));
- document.body.style.setProperty('--selected-ink',highlightLabelColor({highlight:theme.accent,dark:theme.dark}));
+ const hitInk=highlightLabelColor(theme);
+ document.body.style.setProperty('--bar-match-ink',hitInk);
+ const selectedInk=highlightLabelColor({highlight:theme.accent,dark:theme.dark});
+ document.body.style.setProperty('--selected-ink',selectedInk);
+ document.body.style.setProperty('--bar-hit-edge',hitInk==='#fff'?theme.dark:theme.soft);
+ document.body.style.setProperty('--bar-date-edge',selectedInk==='#fff'?theme.dark:theme.soft);
  for(const [tone,value] of Object.entries(theme)){
   if(tone!=='name')document.body.style.setProperty('--'+(tone==='dark'?'deep':tone),value);
  }
@@ -1218,7 +1307,7 @@ function renderThemeOptions(){
  $('theme-options').innerHTML=Object.entries(palettes).map(([key,theme])=>{
  const samples=themeTones.map(([tone,label])=>
   '<span class="theme-sample"><span class="theme-swatch" style="background:'+theme[tone]+'" aria-hidden="true"></span>'+
-  '<span>'+label+'</span><span class="theme-hex">'+theme[tone].toUpperCase()+'</span></span>'
+  '<span>'+label+'</span></span>'
  ).join('');
  return '<button type="button" data-theme-choice="'+key+'" aria-pressed="'+(key===currentTheme)+'">'+
   '<span class="theme-identity"><span class="theme-swatch theme-main-swatch" style="background:'+theme.accent+'" aria-hidden="true"></span>'+
@@ -1235,6 +1324,7 @@ function collapseSection(key){
  $(key+'-body').hidden=closed;
  $('collapse-'+key).setAttribute('aria-expanded',String(!closed));
  if(key==='timeline')$('timeline-controls').hidden=closed;
+ if(key==='eventlist')$('event-display-options').hidden=closed;
  if(key==='map'){
   $('map-tools').hidden=closed;
   if(!closed)map.invalidateSize({pan:false});
@@ -1664,6 +1754,7 @@ function openTrips(selected){
  choice.value=String(index);
  const dialog=$('trip-dialog');
  if(!dialog.open)dialog.showModal();
+ $('trips').setAttribute('aria-pressed','true');
  renderTrip(tripEvents[index]);
 }
 $('trips').onclick=()=>openTrips();
@@ -1671,6 +1762,7 @@ $('trip-choice').onchange=()=>renderTrip(tripEvents[Number($('trip-choice').valu
 $('trip-close').onclick=()=>$('trip-dialog').close();
 $('trip-dialog').onclose=()=>{
  if($('trip-dialog').open)return;
+ $('trips').setAttribute('aria-pressed','false');
  tripResize?.disconnect();
  if(tripMap)tripMap.remove();
  tripMap=tripMarkers=tripRoutes=tripLayerControl=tripShareData=null;
@@ -2154,9 +2246,15 @@ function renderAnnual(year,custom=$('annual-year-select').value==='range'){
   return exportAnnual({...report,stats,highlight},national,shanghai,palette);
  };
 }
-async function downloadPng(image,filename,dialog){
+async function encodePng(image){
  const png=await new Promise(resolve=>image.toBlob(resolve,'image/png'));
  if(!png)throw Error('PNG 编码失败');
+ return png;
+}
+async function downloadPng(image,filename,dialog){
+ downloadImage(await encodePng(image),filename,dialog);
+}
+function downloadImage(png,filename,dialog){
  const url=URL.createObjectURL(png);
  const link=document.createElement('a');
  link.download=filename+'.png';
@@ -2172,7 +2270,15 @@ async function exportAnnual(report,nationalMap,shanghaiMap,palette){
  try{
   const image=document.createElement('canvas');
   drawAnnualImage(image,report,nationalMap,shanghaiMap,palette);
-  await downloadPng(image,report.filename,$('annual-review'));
+  const png=await encodePng(image);
+  const files=[new File([png],report.filename+'.png',{type:'image/png'})];
+  if(navigator.share&&navigator.canShare?.({files})){
+   try{
+    await navigator.share({files});
+    return;
+   }catch(error){if(error.name==='AbortError')return;}
+  }
+  downloadImage(png,report.filename,$('annual-review'));
   status.textContent='已生成 PNG 图片';
  }catch{
   status.textContent='图片导出失败，请重试';
@@ -2196,6 +2302,7 @@ async function openAnnualReview(){
  }
  $('annual-status').textContent='正在加载地图边界…';
  overlay.showModal();
+ $('annual').setAttribute('aria-pressed','true');
  try{
   await Promise.all([loadCityBoundaries(),loadShanghaiLandmarks()]);
   if(overlay.open&&request===annualOpenRequest){
@@ -2214,7 +2321,11 @@ async function openAnnualReview(){
 }
 $('annual').onclick=openAnnualReview;
 $('annual-close').onclick=()=>$('annual-review').close();
-$('annual-review').onclose=()=>{if(!$('annual-review').open)annualMapResize?.disconnect();};
+$('annual-review').onclose=()=>{
+ if($('annual-review').open)return;
+ $('annual').setAttribute('aria-pressed','false');
+ annualMapResize?.disconnect();
+};
 $('annual-year-select').onchange=event=>{
  const custom=event.target.value==='range';
  const year=custom?Number($('annual-review').dataset.year):Number(event.target.value);
