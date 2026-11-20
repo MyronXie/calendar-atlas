@@ -1,6 +1,6 @@
 import {annualLegend,cityKey,drawAnnualImage,drawAnnualMap,drawShanghaiMap,layoutMapLabels,mapAttribution,shanghaiDistricts,shanghaiMapPlaces,shanghaiMetroLayers,shanghaiName} from './annual-review.js';
 import {basemaps} from './basemaps.js';
-import {periodCounts,addMatches,barHeights,matchedLabelPlacement,frequencyBuckets,periodRange,dateBucket,dateBucketLabel} from './timeline.js';
+import {periodCounts,addMatches,barHeights,matchedLabelPlacement,frequencyBuckets,periodRange,dateBucket,dateBucketLabel,dateConditionLabels,hourGroups} from './timeline.js';
 import {palettes,resolveTheme,coordinateLabel,highlightLabelColor} from './appearance.js';
 import {criterion,toggleCriterion,matchesFilters,matchesCriterionText,matchesCriterionDate,searchCriterion,criterionDisplay,eventParts,eventCriteria,rankSections,toggleRankHidden} from './filters.js';
 import {selectEmoji} from './emoji.js';
@@ -93,12 +93,13 @@ function refresh({timeline=true,fitBeforeDraw=false}={}){
  countedRows=[...occurrenceDays(filtered,from,to,$('split-trip-days').checked,true)];
  limit=50;
  $('status').textContent=result.errors||result.capped?'部分重复事件无法完整展开，请缩小时间范围。':'';
- renderTimeStats(result.events,scoped,from,to);
+ renderDateConditions(dates);
+ renderTimeStats(result.events,dates.length?scoped:null,others.length?filtered:null,from,to);
  if(focusView()){
-  focusChartData={events:result.events,scoped,matched:others.length?filtered:null,from,to};
+  focusChartData={events:result.events,scoped:dates.length?scoped:null,matched:others.length?filtered:null,from,to};
   renderFocusChart();
  }else{
-  overviewChartData={scoped,matched:others.length?filtered:null};
+  overviewChartData={events:result.events,scoped:dates.length?scoped:null,matched:others.length?filtered:null};
   if(timeline)renderOverviewChart();
  }
  buildPoints();
@@ -143,24 +144,26 @@ function activityStats(events,rows,places=new Set(rows.flatMap(row=>row.places))
   ['同伴',new Set(rows.flatMap(row=>row.event.partners)).size],
  ];
 }
-function renderTimeStats(events,scoped,from,to){
- const focus=focusView(),filtering=Boolean(appliedCriteria.length);
+function renderDateConditions(criteria){
+ $('timeline-date-conditions').hidden=!criteria.length;
+ $('timeline-date-labels').textContent=dateConditionLabels(criteria).join(' | ');
+}
+function renderTimeStats(events,scoped,matched,from,to){
  const split=$('split-trip-days').checked;
  const summaries=new Map();
  const summarize=records=>{
   if(!summaries.has(records))summaries.set(records,activityStats(records,[...occurrenceDays(records,from,to,split)]));
   return summaries.get(records);
  };
- const totals=summarize(events),dates=focus?summarize(scoped):null,matches=focus||filtering?summarize(filtered):null;
+ const totals=summarize(events),dates=scoped?summarize(scoped):null,matches=matched?summarize(matched):null;
  const stats=$('timeline-stats');
  const weights=[];
  const separator='<span aria-hidden="true"> / </span>';
- $('timeline-stats-key').hidden=!focus;
  stats.innerHTML=totals.map(([label,total],i)=>{
   const hit=matches?.[i][1],dated=dates?.[i][1];
   const count=(matches?'<strong class="timeline-stat-hit">'+hit+'</strong>'+separator:'')
-   +(focus?'<span class="timeline-stat-dates">'+dated+'</span>'+separator:'')+total;
-  const description=matches?' aria-label="命中 '+hit+(focus?'，日期条件 '+dated:'')+'，共 '+total+'"':'';
+   +(dates?'<span class="timeline-stat-dates">'+dated+'</span>'+separator:'')+total;
+  const description=matches||dates?' aria-label="'+(matches?'命中 '+hit+'，':'')+(dates?'日期条件 '+dated+'，':'')+'共 '+total+'"':'';
   const digits=[total,hit,dated].filter(n=>n!==undefined).map(String).join('/').length;
   weights.push('minmax(0,'+Math.max(5,digits)+'fr)');
   return '<div><dt>'+label+'</dt><dd'+description+'>'
@@ -196,17 +199,18 @@ function renderFocusChart(){
  bars.innerHTML=rows.map(row=>{
   const {value,label,title,total,scoped,matched:hit}=row;
   const active=activeCriteria.some(c=>c.id===dateCriterion(focusUnit,value).id);
-  const description=barDescription(title,total,matched?hit:null,scoped);
+  const description=barDescription(title,total,matched?hit:null,focusChartData.scoped?scoped:null);
   const shortLabel=focusUnit==='year'?'&#39;'+label.slice(-2):label;
   return '<button type="button" class="yearbar frequency-bar'+(active?' selected':'')+'" data-frequency-bucket="'+value
    +'" data-total="'+total+'" data-scoped="'+scoped+'" data-matched="'+hit+'" aria-pressed="'+active+'" title="'+E(description)+'" aria-label="'+E(description)+'">'
-   +timelineBar({total,scoped,matched:matched?hit:null,peak,label,shortLabel})+'</button>';
+   +timelineBar({total,inRange:total,scoped:focusChartData.scoped?scoped:null,matched:matched?hit:null,peak,label,shortLabel})+'</button>';
  }).join('');
  for(const bar of bars.querySelectorAll('[data-frequency-bucket]'))bar.onclick=()=>{
   const value=Number(bar.dataset.frequencyBucket);
   applyCriterion(dateCriterion(focusUnit,value));
   bars.querySelector('[data-frequency-bucket="'+value+'"]')?.focus({preventScroll:true});
  };
+ renderHourGroups();
  fitFrequencyChart();
 }
 function toggleTimelineButton(button,active){
@@ -224,10 +228,36 @@ $('timeline-current').onclick=()=>{
  activeCriteria.push(dateCriterion(focusUnit,dateBucket(new Date(),focusUnit)));
  refresh();
 };
-$('timeline-clear-dates').onclick=()=>{
+function clearDateConditions(){
  activeCriteria=activeCriteria.filter(c=>c.kind!=='time');
  refresh();
-};
+}
+$('timeline-clear-dates').onclick=$('timeline-date-clear').onclick=clearDateConditions;
+function renderHourGroups(){
+ const groups=$('focus-hour-groups');
+ groups.hidden=focusUnit!=='hour';
+ if(groups.hidden)return;
+ const selected=new Set(activeCriteria.filter(c=>c.kind==='time'&&c.scope==='hour').map(c=>Number(c.value)));
+ const parts=hourGroups.flatMap(group=>group.ranges.map(([start,end])=>({group,start,end}))).sort((a,b)=>a.start-b.start);
+ groups.innerHTML=parts.map(({group,start,end})=>{
+  const active=group.hours.every(hour=>selected.has(hour));
+  const edge=hour=>String(hour).padStart(2,'0')+':00';
+  const [first,last]=group.ranges;
+  const label=group.label+' '+edge(last?last[0]:first[0])+'–'+edge(first[1]);
+  return '<button type="button" style="grid-column:'+(start+1)+' / '+(end+1)+'" data-hour-part="'+start
+   +'" title="'+label+'" aria-label="'+label+'" aria-pressed="'+active+'">'+group.label+'</button>';
+ }).join('');
+ for(const button of groups.querySelectorAll('[data-hour-part]'))button.onclick=()=>{
+  const part=parts.find(item=>item.start===Number(button.dataset.hourPart));
+  const criteria=part.group.hours.map(hour=>dateCriterion('hour',hour));
+  const ids=new Set(criteria.map(c=>c.id));
+  const remove=part.group.hours.every(hour=>selected.has(hour));
+  activeCriteria=activeCriteria.filter(c=>!ids.has(c.id));
+  if(!remove)activeCriteria.push(...criteria);
+  refresh();
+  groups.querySelector('[data-hour-part="'+part.start+'"]')?.focus({preventScroll:true});
+ };
+}
 function fitFrequencyChart(){
  const bars=$('day-frequency-bars');
  fitTimelineColumns(bars,bars.clientWidth,bars.childElementCount);
@@ -350,11 +380,11 @@ function renderEvents(){
   const start=event.start,year=String(start.getFullYear());
   const [month,date,hour,minute]=[start.getMonth()+1,start.getDate(),start.getHours(),start.getMinutes()]
    .map(value=>String(value).padStart(2,'0'));
-  const dateField=(unit,value)=>appliedCriteria.some(c=>c.scope===unit&&matchesCriterionDate(c,start))
+  const dateField=(unit,value)=>appliedCriteria.some(c=>c.scope===unit&&matchesCriterionDate(c,start,event.allDay))
    ?'<mark class="filter-highlight">'+value+'</mark>':value;
   const weekday=' ('+dateField('weekday','日一二三四五六'[start.getDay()])+')';
   const time='<span class="event-date">'+dateField('year',year)+'/'+dateField('month',month)+'/'+dateField('date',date)
-   +'<span class="event-weekday-wide">'+weekday+'</span></span> <span class="event-clock">'+hour+':'+minute
+   +'<span class="event-weekday-wide">'+weekday+'</span></span> <span class="event-clock">'+dateField('hour',hour+':'+minute)
    +'<span class="event-weekday-narrow">'+weekday+'</span></span>';
   const trip=isTrip(event)?'<button type="button" class="event-action event-trip" data-trip-event="'+i+'" aria-label="查看行程详细">详细</button>':'';
   return '<article class="event"><div class="eventrow"><button type="button" class="event-time" data-event-range="'+i
@@ -393,7 +423,7 @@ function renderFilterChips(){
   return '<button '+attribute+' aria-label="'+E('移除'+label+'筛选：'+value)+'">'
    +(icon?entityIcon(icon):E(label)+'：')+'<strong>'+E(value)+'</strong>'+entityIcon('dialog-close','filter-chip-dismiss')+'</button>';
  };
- container.innerHTML=activeCriteria.map((c,i)=>chip(c,'data-remove-filter="'+i+'"')).join('')
+ container.innerHTML=activeCriteria.map((c,i)=>c.kind==='time'?'':chip(c,'data-remove-filter="'+i+'"')).join('')
   +(draftCriterion&&!activeCriteria.some(c=>c.id===draftCriterion.id)?chip(draftCriterion,'data-remove-draft'):'');
  container.querySelectorAll('[data-remove-filter]').forEach(el=>el.onclick=()=>{
   activeCriteria.splice(+el.dataset.removeFilter,1);
@@ -707,7 +737,7 @@ function draw(){clearTouchPreview();shanghaiLayerControl.hidden=mapLevel()!=='sh
  for(const input of placeToggles.querySelectorAll('input'))input.checked=$(input.name).checked;const heat=Boolean($('heatmap')&&$('heatmap').checked)&&mapLevel()==='place';if(mapLevel()!=='place'){drawOverview();return;}map.options.zoomSnap=1;map.setMinZoom(0);map.setMaxZoom(18);overviewLevel='';clearOverview();if(!tiles||!map.hasLayer(tiles))setProvider(false);$('provider').disabled=false;$('provider').style.display='';if(heatLayer)map.removeLayer(heatLayer);drawPlaceMarkers(heat);}
 map.on('click',e=>{clearTouchPreview();if(!pickMode)return;pickMode=false;const p=basemaps[$('provider').value]?.gcj02&&mapLevel()==='place'&&isMainland(e.latlng.lat,e.latlng.lng)?gcjToWgs(e.latlng.lat,e.latlng.lng):[e.latlng.lat,e.latlng.lng];$('editform').elements.lat.value=p[0].toFixed(6);$('editform').elements.lon.value=p[1].toFixed(6);$('editform').elements.datum.value='wgs84';$('editor').showModal();$('status').textContent='已选取坐标，点击保存完成标注';});
 $('pickpoint').onclick=()=>{if(mapLevel()!=='place'){$('level').value='place';buildPoints();draw();fitPoints();}pickMode=true;$('editor').close();$('status').textContent='请在地图上点击精确位置（坐标仅存本机）';};
-$('reset').onclick=()=>mapLevel()==='shanghai'?fitOverview():fitPoints();$('level').onchange=async()=>{const lv=mapLevel();if(lv==='shanghai'){await enterShanghaiMap();return;}if(lv==='country'&&!world){$('status').textContent='正在加载国家边界…';try{world=await (await fetch('data/world.json')).json();setupGaz();cache.clear();}catch{}finally{$('status').textContent='';}}if(mapLevel()!==lv)return;buildPoints();draw();fitPoints();};$('exclude').onchange=refresh;$('search').oninput=()=>{refresh();};$('searchscope').onchange=()=>refresh();$('searchform').onsubmit=e=>{e.preventDefault();const value=$('search').value.trim();if(!value)return;const c=searchCriterion($('searchscope').value||'all',value,rangeCache?.events||[]);if(!activeCriteria.some(x=>x.id===c.id))activeCriteria.push(c);$('search').value='';refresh();fitPoints();};$('more').onclick=()=>{limit+=50;renderEvents();};$('unselect').onclick=()=>{activeCriteria=[];$('search').value='';limit=50;refresh();};document.querySelectorAll('[data-panel]').forEach(el=>el.onclick=()=>{tab=el.dataset.tab;document.querySelectorAll('[data-panel]').forEach(x=>x.classList.toggle('active',x===el));renderRank();});document.querySelectorAll('[data-settings-panel]').forEach(el=>el.onclick=()=>{activePanel=el.dataset.settingsPanel;document.querySelectorAll('[data-settings-panel]').forEach(x=>x.classList.toggle('active',x===el));$('settings-drawer').querySelectorAll('[data-content]').forEach(x=>x.hidden=x.dataset.content!==activePanel);if(activePanel==='manage')renderPlaces();});
+$('reset').onclick=()=>mapLevel()==='shanghai'?fitOverview():fitPoints();$('level').onchange=async()=>{const lv=mapLevel();if(lv==='shanghai'){await enterShanghaiMap();return;}if(lv==='country'&&!world){$('status').textContent='正在加载国家边界…';try{world=await (await fetch('data/world.json')).json();setupGaz();cache.clear();}catch{}finally{$('status').textContent='';}}if(mapLevel()!==lv)return;buildPoints();draw();fitPoints();};$('exclude').onchange=refresh;$('search').oninput=()=>{refresh();};$('searchscope').onchange=()=>refresh();$('searchform').onsubmit=e=>{e.preventDefault();const value=$('search').value.trim();if(!value)return;const c=searchCriterion($('searchscope').value||'all',value,rangeCache?.events||[]);if(!activeCriteria.some(x=>x.id===c.id))activeCriteria.push(c);$('search').value='';refresh();fitPoints();};$('more').onclick=()=>{limit+=50;renderEvents();};$('unselect').onclick=()=>{activeCriteria=activeCriteria.filter(c=>c.kind==='time');$('search').value='';limit=50;refresh();};document.querySelectorAll('[data-panel]').forEach(el=>el.onclick=()=>{tab=el.dataset.tab;document.querySelectorAll('[data-panel]').forEach(x=>x.classList.toggle('active',x===el));renderRank();});document.querySelectorAll('[data-settings-panel]').forEach(el=>el.onclick=()=>{activePanel=el.dataset.settingsPanel;document.querySelectorAll('[data-settings-panel]').forEach(x=>x.classList.toggle('active',x===el));$('settings-drawer').querySelectorAll('[data-content]').forEach(x=>x.hidden=x.dataset.content!==activePanel);if(activePanel==='manage')renderPlaces();});
 try{
  const pref=JSON.parse(localStorage.getItem('atlas-event-columns')||'{}');
  for(const key of Object.keys(eventColumns))eventColumns[key]=pref[key]!==false;
@@ -765,17 +795,18 @@ for(const id of countOptionIds)$(id).onchange=()=>{
  refresh({timeline:id!=='merge-same-day'});
 };
 function ensureTimeline(){const key=JSON.stringify([source.length,yearMin,yearMax,$('recurring').checked,$('exclude').checked,rules,csvVersion]);if(key!==timelineKey){timelineEvents=applyRules(expand(source,new Date(yearMin,0,1),new Date(yearMax,11,31,23,59,59,999),$('recurring').checked).events,rules,$('exclude').checked,new Set()).events;timelineKey=key;}}
-function barDescription(label,total,matched,scoped){
- return label+(matched===null?'':' · 命中 '+matched)+' · 日期范围 '+scoped+' · 共 '+total+' 条事件';
+function barDescription(label,total,matched,scoped,inRange){
+ return label+(matched===null?'':' · 命中 '+matched)+(scoped===null?'':' · 日期条件 '+scoped)
+  +(inRange===undefined?'':' · 选中范围 '+inRange)+' · 共 '+total+' 条事件';
 }
-function timelineBar({total,scoped,matched,peak,label,shortLabel,showCounts=true}){
- const scope=barHeights(total,scoped,peak),hit=barHeights(total,matched??0,peak);
+function timelineBar({total,inRange,scoped,matched,peak,label,shortLabel,showCounts=true}){
+ const range=barHeights(total,inRange,peak),dates=barHeights(total,scoped??0,peak),hit=barHeights(total,matched??0,peak);
  const placement=showCounts?matchedLabelPlacement(hit):'above';
  const count=(value,className)=>'<span class="'+className+'" style="--count-digits:'+String(value).length+'" aria-hidden="true">'+value+'</span>';
- return '<span class="bar-stack '+placement+'" style="height:'+scope.total+'px;--scoped-height:'+scope.matched+'px;--matched-height:'+hit.matched+'px">'
-  +'<i class="bar-original"></i><i class="bar-scoped"></i>'+(matched===null?'':'<i class="bar-matched"></i>')
+ return '<span class="bar-stack '+placement+'" style="height:'+range.total+'px;--range-height:'+range.matched+'px;--scoped-height:'+dates.matched+'px;--matched-height:'+hit.matched+'px">'
+  +'<i class="bar-original"></i><i class="bar-range"></i>'+(scoped===null?'':'<i class="bar-scoped"></i>')+(matched===null?'':'<i class="bar-matched"></i>')
   +(showCounts&&total?count(total,'barcount')+(hit.matched?count(matched,'bar-match-count'):''):'')
-  +'</span>'+(label?'<span class="year-full">'+label+'</span><span class="year-short" aria-hidden="true">'+shortLabel+'</span>':'');
+  +'</span>'+(label?'<span class="bar-label"><span class="year-full">'+label+'</span><span class="year-short" aria-hidden="true">'+shortLabel+'</span></span>':'');
 }
 const periodIndex=(date,monthly)=>Number(date.slice(0,4))*(monthly?12:1)+(monthly?Number(date.slice(5,7))-1:0);
 const monthLabel=index=>Math.floor(index/12)+'-'+String(index%12+1).padStart(2,'0');
@@ -789,20 +820,23 @@ function renderOverviewChart(){
  overviewBounds=[min,max];
  const [a,b]=selectedRange.map(date=>periodIndex(date,monthly));
  const periods=periodCounts(timelineEvents,monthly,min,max);
- addMatches(periods,overviewChartData.scoped,monthly,min,'scoped');
+ addMatches(periods,overviewChartData.events,monthly,min,'inRange');
+ const hasDates=Boolean(overviewChartData.scoped);
+ if(hasDates)addMatches(periods,overviewChartData.scoped,monthly,min,'scoped');
  const hasMatches=Boolean(overviewChartData.matched);
  if(hasMatches)addMatches(periods,overviewChartData.matched,monthly,min);
  const peak=Math.max(1,...periods.map(p=>p.total));
  $('timeline-track').classList.toggle('monthly',monthly);
  $('timeline-month-axis').hidden=!monthly;
- overviewBars.innerHTML=periods.map(({index,total,scoped=0,matched})=>{
+ overviewBars.innerHTML=periods.map(({index,total,inRange=0,scoped=0,matched})=>{
   const date=monthly?monthLabel(index):String(index);
   const hit=hasMatches?matched:null;
   const selected=index>=a&&index<=b;
-  const description=barDescription(date,total,hit,scoped);
+  const dates=hasDates?scoped:null;
+  const description=barDescription(date,total,hit,dates,inRange);
   return '<button type="button" class="yearbar '+(selected?'selected ':'')+(monthly&&index%12===0?'year-start':'')
    +'" data-period="'+index+'" data-total="'+total+'" data-matched="'+(hit??0)+'" aria-pressed="'+selected+'" title="'+description+'" aria-label="'+description+'">'
-   +timelineBar({total,scoped,matched:hit,peak,label:monthly?'':date,shortLabel:'&#39;'+date.slice(-2),showCounts:!monthly})+'</button>';
+   +timelineBar({total,inRange,scoped:dates,matched:hit,peak,label:monthly?'':date,shortLabel:'&#39;'+date.slice(-2),showCounts:!monthly})+'</button>';
  }).join('');
  for(const button of overviewBars.querySelectorAll('[data-period]'))button.onclick=event=>{
   const index=Number(button.dataset.period);
@@ -826,15 +860,19 @@ function fitOverviewChart(){
  const [min,max]=overviewBounds,count=max-min+1;
  fitTimelineColumns($('timeline-track'),width,count,monthly);
  if(!monthly)return;
- const unit=width/count,axis=$('timeline-month-axis'),labels=[];
- const step=Math.ceil(35/(12*unit));
- for(let index=min;index<=max;index++){
-  if(index!==min&&(index%12!==0||(index-min)*unit<32||Math.floor(index/12)%step!==0))continue;
-  const left=Math.min(width-29,(index-min)*unit);
-  if(labels.length&&left-labels.at(-1).left<31)continue;
-  labels.push({left,year:Math.floor(index/12)});
+ const labels=[];
+ const unit=width/count;
+ for(let start=min;start<=max;){
+  const year=Math.floor(start/12),end=Math.min(max+1,(year+1)*12);
+  const center=(start+end-2*min)*unit/2;
+  const full=(end-start)*unit>=32;
+  const half=full?15:9;
+  if(center-half>=0&&center+half<=width&&(!labels.length||center-half>=labels.at(-1).right+4)){
+   labels.push({center,right:center+half,year,label:full?year:'’'+String(year).slice(-2)});
+  }
+  start=end;
  }
- axis.innerHTML=labels.map(({left,year})=>'<span style="left:'+left+'px">'+year+'</span>').join('');
+ $('timeline-month-axis').innerHTML=labels.map(({center,year,label})=>'<span data-axis-year="'+year+'" style="left:'+center+'px">'+label+'</span>').join('');
 }
 if(typeof ResizeObserver==='function')new ResizeObserver(fitOverviewChart).observe(overviewBars);
 function setTimeRange(start,end){
@@ -849,6 +887,8 @@ function setTimeMode(mode){
  const focus=focusView();
  $('timeline-chart').hidden=focus;
  $('timeline-focus').hidden=!focus;
+ $('overview-tools').hidden=focus;
+ $('focus-tools').hidden=!focus;
  toggleTimelineButton($('timeline-mode-overview'),!focus);
  toggleTimelineButton($('timeline-mode-focus'),focus);
  refresh();
@@ -1179,7 +1219,7 @@ function renderThemeOptions(){
 for(const [id,render] of [['place-list-details',renderPlaces],['rule-list-details',renderBlacklist],['theme-list-details',renderThemeOptions]]){
  $(id).ontoggle=()=>{if($(id).open)render();};
 }
-function collapseSection(key){const closed=Boolean(collapsedSections[key]);$(key+'-body').hidden=closed;const button=$('collapse-'+key);button.setAttribute('aria-expanded',String(!closed));if(key==='map'&&!closed)setTimeout(()=>{map.invalidateSize();fitPoints();},50);}
+function collapseSection(key){const closed=Boolean(collapsedSections[key]);$(key+'-body').hidden=closed;const button=$('collapse-'+key);button.setAttribute('aria-expanded',String(!closed));if(key==='timeline')$('timeline-controls').hidden=closed;if(key==='map'&&!closed)setTimeout(()=>{map.invalidateSize();fitPoints();},50);}
 for(const key of ['map','timeline','eventlist']){$('collapse-'+key).onclick=()=>{collapsedSections[key]=!collapsedSections[key];localStorage.setItem('atlas-sections',JSON.stringify(collapsedSections));collapseSection(key);};collapseSection(key);}applyTheme(currentTheme);
 
 function settingsDrawer(open,restoreFocus=true){

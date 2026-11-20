@@ -54,7 +54,7 @@ body.settings-open #settings-drawer{transform:translateX(0);visibility:visible}
 :is(.app-toolbar button,.eventsearchbar button,.meta-refresh,.annual-nav,#events-back-top){display:inline-flex;align-items:center;justify-content:center;gap:4px}
 #timeline-body,#eventlist-body{padding:0 16px 14px}
 
-.periodtools{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.periodtools{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:6px}
 /* Settings lists: aligned row heights, small semantic tags, same icon buttons. */
 .managebar,.blacklist-toolbar{display:flex;align-items:center;gap:7px;margin:12px 0 8px}.managebar input,.blacklist-toolbar input{flex:1;min-width:0}.managebar select,.blacklist-toolbar select{width:112px}
 .rankrow,.blacklist-row,.placeitem{min-height:38px;border-bottom:1px solid var(--line);padding:8px 0;font-size:var(--row-font)}
@@ -106,13 +106,13 @@ dialog{width:520px;max-width:94vw;max-height:92vh;overflow:auto;padding:22px;bor
 .visit-marker{background:var(--accent);border:2px solid #fff;border-radius:50%;box-shadow:0 1px 7px #0004;color:#fff;text-align:center;font:12px/24px 'Segoe UI',sans-serif}.single-emoji{font:20px/24px 'Segoe UI Emoji','Apple Color Emoji',sans-serif}.visit-marker:has(.single-emoji){background:var(--deep);border-color:var(--mid)}
 .marker-cluster-small,.marker-cluster-medium,.marker-cluster-large{background:var(--mid)}.marker-cluster div{background:var(--accent);color:#fff;font-size:12px}
 .leaflet-popup-content{font:13px/1.8 'Segoe UI','Microsoft YaHei',sans-serif;overflow-wrap:anywhere}.leaflet-tooltip.atlas-tooltip{width:max-content!important;min-width:100px;max-width:min(420px,75vw)!important;white-space:normal!important;word-break:normal!important;overflow-wrap:break-word!important;writing-mode:horizontal-tb!important;font:13px/1.6 'Segoe UI','Microsoft YaHei',sans-serif;box-sizing:border-box}.leaflet-control-attribution{font-size:10px!important}
-/* The timeline uses one palette for all ranges and filters. */
-.timelinehead{justify-content:space-between}
-.timeline-title{display:flex;align-items:baseline;gap:2px;min-width:0;white-space:nowrap}
-#timeline-range{padding:0;min-height:32px;border:0;background:none;font-size:14px;font-weight:650;color:var(--deep);font-variant-numeric:tabular-nums}
+.timeline-main{container:timeline / inline-size}
+.timelinehead{justify-content:flex-end;flex-wrap:wrap;column-gap:10px;row-gap:6px}
+.timeline-title{display:flex;align-items:baseline;gap:2px;margin-right:auto;min-width:0;white-space:nowrap}
+#timeline-range{padding:0;min-height:32px;border:0;background:none;font-size:clamp(14px,3.1cqi,18px);font-weight:650;color:var(--deep);font-variant-numeric:tabular-nums}
 #timeline-range:hover{text-decoration:underline;text-underline-offset:3px}
-.timelinehead .unit-toggle{margin-left:auto;flex:none}
-@media(max-width:480px){#timeline-range{font-size:12px}.timelinehead .unit-toggle{margin-left:0}}
+.timeline-mode{flex:none}
+#timeline-controls{flex:none;max-width:100%}
 #timeline-body{container:timeline-body / inline-size}
 .timeline-range-dialog.atlas-dialog{width:380px}
 .timeline-range-dialog h2{margin:0 0 12px}
@@ -134,7 +134,14 @@ dialog{width:520px;max-width:94vw;max-height:92vh;overflow:auto;padding:22px;bor
 .timeline-stat-number{display:inline-block;white-space:nowrap}
 .timeline-stat-hit{color:var(--highlight)}
 .timeline-stat-dates{color:var(--accent)}
-#timeline-stats-key{display:block;font-size:11px;color:var(--muted);margin-top:5px}
+#timeline-date-conditions{display:flex;align-items:baseline;flex-wrap:wrap;gap:0 4px;margin-top:6px;color:var(--deep);font-size:12px}
+#timeline-date-labels{min-width:0;overflow-wrap:anywhere}
+#timeline-date-clear{align-self:center;display:inline-grid;place-items:center;min-height:24px;padding:2px 3px;border:0;background:none;color:var(--muted)}
+#timeline-date-clear:hover{background:var(--soft);color:var(--deep)}
+#focus-hour-groups{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));column-gap:4px;margin-top:4px}
+#day-frequency-bars.compact-years+#focus-hour-groups{column-gap:1px}
+#focus-hour-groups button{min-width:0;min-height:26px;margin-right:1px;padding:0;border-radius:3px;font-size:clamp(9px,2.3cqi,12px);white-space:nowrap}
+#focus-hour-groups button[aria-pressed=true]{background:var(--soft);border-color:var(--mid);color:var(--accent);font-weight:650}
 @container timeline-body (max-width:570px){
  .timeline-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
@@ -146,22 +153,28 @@ dialog{width:520px;max-width:94vw;max-height:92vh;overflow:auto;padding:22px;bor
 .timeline-bars{display:flex;align-items:end;gap:4px;height:126px}
 #yearbars{touch-action:pan-y;user-select:none;cursor:crosshair}
 #yearbars .yearbar{cursor:inherit}
-.yearbar{display:flex;flex-direction:column;justify-content:end;align-items:center;gap:6px;flex:1 1 0;width:0;min-width:0;height:120px;min-height:0;padding:0 1px 3px;border:0;background:transparent;font-size:11px;color:var(--muted)}
+.yearbar{display:flex;flex-direction:column;justify-content:end;align-items:center;gap:6px;flex:1 1 0;width:0;min-width:0;height:120px;min-height:0;padding:0 1px 3px;border:0;background:transparent;font-size:11px;color:var(--muted);position:relative}
 .yearbar:focus-visible{outline-offset:-2px;z-index:3}
 .yearbar.selected{color:var(--accent);font-weight:700}
-#yearbars:not(.choosing-range) .selected,#yearbars .period-preview{background:linear-gradient(transparent 84%,var(--soft) 84%);box-shadow:inset 0 -2px var(--mid)}
-.frequency-bar.selected{box-shadow:inset 0 -2px var(--accent)}
+.yearbar:hover,.yearbar[aria-pressed="true"]{background:transparent}
+.yearbar>span{pointer-events:none}
+.bar-label{border-radius:3px;min-width:100%;text-align:center;white-space:nowrap}
+#yearbars:not(.choosing-range) .selected .bar-label,#yearbars .period-preview .bar-label,.frequency-bar.selected .bar-label{background:var(--soft)}
+#yearbars.choosing-range :is(.bar-range,.bar-scoped,.bar-matched,.bar-match-count){visibility:hidden}
+#yearbars.choosing-range .period-preview .bar-range{visibility:visible;height:100%}
+#timeline-track.monthly :is(#yearbars:not(.choosing-range) .selected,.period-preview)::after{position:absolute;inset:auto 0 0;height:2px;background:var(--mid);content:""}
 .yearbar .bar-stack{display:block;position:relative;flex-shrink:0;width:86%}
 .yearbar .bar-stack i{position:absolute;bottom:0;left:0;display:block;width:100%;border-radius:2px 2px 0 0;pointer-events:none}
 .yearbar .bar-original{height:100%;background:var(--soft)}
+.yearbar .bar-range{height:var(--range-height);background:var(--mid)}
 .yearbar .bar-scoped{height:var(--scoped-height);background:var(--accent)}
 .yearbar .bar-matched{height:var(--matched-height);background:var(--highlight);z-index:1}
 #timeline-track.monthly #yearbars{height:110px;gap:0}
 #timeline-track.monthly .yearbar{height:105px;gap:0;padding:0 0 3px}
 #timeline-track.monthly .bar-stack{width:92%}
-#timeline-track.monthly .year-start{border-left:1px solid var(--line)}
+#timeline-track.monthly .year-start{box-shadow:inset 1px 0 var(--line)}
 #timeline-month-axis{position:relative;height:16px;font-size:10px;color:var(--muted)}
-#timeline-month-axis span{position:absolute;top:2px}
+#timeline-month-axis span{position:absolute;top:2px;transform:translateX(-50%);white-space:nowrap}
 @media(max-width:1100px){body{--drawer-width:330px;--drawer-padding:12px}}
 @media(max-width:1100px),(max-height:760px){.canvaswrap{height:40vh;min-height:200px}}
 @media(max-width:650px){body{--drawer-width:min(88vw,360px);--drawer-padding:12px}aside{box-shadow:0 0 20px #253a2922}main,body.settings-open main{margin-left:0;margin-right:0}.mapcard,.timeline-main,.events{margin:8px}.mapbar,.timelinehead,.eventhead{padding:9px 12px}#timeline-body,#eventlist-body{padding:0 12px 12px}.canvaswrap{height:32vh;min-height:170px}.timelinehead{flex-wrap:wrap;gap:6px}.periodtools{gap:4px}.eventsearchbar{flex-wrap:wrap}.eventsearchbar .eventsearch{min-width:100px}.eventsearchbar select{width:72px}.place-coordinates{font-size:10px}.place-type{max-width:45px}.barcount,.bar-match-count{font-size:9px;--count-character:5.4}.yearbar{font-size:9px}.fieldrow{flex-wrap:wrap}.fieldrow label{flex:1 1 120px}}
@@ -369,3 +382,5 @@ body:has(.trip-dialog[open],.annual-card[open]){overflow:hidden}
  .app-toolbar{min-height:50px;z-index:1050}
  :is(#drawer,#settings-drawer){top:50px}
 }
+
+@media(max-width:350px){.app-toolbar button{padding-inline:4px}}
