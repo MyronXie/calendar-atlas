@@ -109,8 +109,8 @@ function setDayRangeError(invalid){
 function activityStats(events,rows,places=new Set(rows.flatMap(row=>row.places))){
  return [
   ['事件',events.length],
-  ['记录天数',new Set(rows.map(row=>row.day)).size],
-  ['到访地点',places.size],
+  ['天数',new Set(rows.map(row=>row.day)).size],
+  ['地点',places.size],
   ['同伴',new Set(rows.flatMap(row=>row.event.partners)).size],
  ];
 }
@@ -119,7 +119,7 @@ function renderDayStats(events,from,to,filtering){
  const summarize=records=>activityStats(records,[...occurrenceDays(records,from,to,split)]);
  const totals=summarize(events);
  const matches=filtering?summarize(filtered):null;
- const stats=$('timeline-day-stats'),labels=['事件','天数','地点','同伴'];
+ const stats=$('timeline-day-stats');
  const weights=[];
  stats.innerHTML=totals.map(([label,total],i)=>{
   const hit=matches?.[i][1];
@@ -127,7 +127,7 @@ function renderDayStats(events,from,to,filtering){
   const description=matches?' aria-label="命中 '+hit+'，共 '+total+'"':'';
   const characters=String(total).length+(matches?String(hit).length+1:0);
   weights.push('minmax(0,'+Math.max(5,characters)+'fr)');
-  return '<div><dt'+(label===labels[i]?'':' title="'+label+'"')+'>'+labels[i]+'</dt><dd'+description+'>'
+  return '<div><dt>'+label+'</dt><dd'+description+'>'
    +'<span class="timeline-day-number">'+count+'</span></dd></div>';
  }).join('');
  stats.style.setProperty('--day-stat-columns',weights.join(' '));
@@ -176,10 +176,7 @@ function eventTitleText(title){
  const separator=title.search(/[\]】]/)+1;
  return mark('group',group,title.slice(0,separator))+mark('event',name,title.slice(separator));
 }
-const entityIcons={
- place:'<path d="M12 21s6-5.2 6-11a6 6 0 1 0-12 0c0 5.8 6 11 6 11Z"/><circle cx="12" cy="10" r="2"/>',
- person:'<circle cx="12" cy="8" r="3"/><path d="M5 20v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2"/>',
-};
+const entityIcon=(kind,extraClass='')=>'<svg class="entity-icon '+extraClass+'" width="16" height="16" aria-hidden="true"><use href="#icon-'+kind+'"/></svg>';
 function eventEntities(names,kind,index,visible,expanded=false){
  const isPlace=kind==='place';
  const wrapper='evententities '+(isPlace?'eventplaces':'eventpeople')+(expanded?' is-expanded':'');
@@ -188,7 +185,7 @@ function eventEntities(names,kind,index,visible,expanded=false){
  const links=names.map(name=>'<button class="entitylink'+(filterHighlights(kind,name)?' filter-highlight':'')+'" data-filter-'+kind+'="'+E(name)+'" aria-pressed="'
   +activeCriteria.some(c=>c.id===criterion(kind,name).id)+'">'+E(name)+'</button>').join('');
  const listId=isPlace?' id="eventplaces-'+index+'"':'';
- const icon='<svg class="event-entity-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+entityIcons[kind]+'</svg>';
+ const icon=entityIcon(kind,'event-entity-icon');
  const more=isPlace?'<button type="button" class="event-action event-places-more" data-place-toggle="'+index+'" aria-controls="eventplaces-'+index
   +'" aria-expanded="'+expanded+'" aria-label="'+(expanded?'收起地点':'展开地点')+'" hidden>'+(expanded?'收起':'展开')+'</button>':'';
  return '<div class="'+wrapper+'"'+hidden+'>'+icon+'<div class="event-entity-list"'+listId+'>'+links+'</div>'+more+'</div>';
@@ -294,7 +291,7 @@ function renderFilterChips(){
  const chip=(c,attribute)=>{
   const {label,icon,value}=criterionDisplay(c);
   return '<button '+attribute+' aria-label="'+E('移除'+label+'筛选：'+value)+'">'
-   +(icon?'<span aria-hidden="true">'+icon+'</span> ':E(label)+'：')+'<strong>'+E(value)+'</strong> ×</button>';
+   +(icon?entityIcon(icon):E(label)+'：')+'<strong>'+E(value)+'</strong> ×</button>';
  };
  container.innerHTML=activeCriteria.map((c,i)=>chip(c,'data-remove-filter="'+i+'"')).join('')
   +(draftCriterion&&!activeCriteria.some(c=>c.id===draftCriterion.id)?chip(draftCriterion,'data-remove-draft'):'');
@@ -1334,8 +1331,9 @@ function renderTrip(event){
   return;
  }
  const {start,end,days}=tripDetails(event);
- summary.textContent=tripDateRange(start,end)
-  +(event.partners.length?' · 同伴：'+event.partners.join('、'):'');
+ summary.innerHTML='<span>'+E(tripDateRange(start,end))+'</span>'
+  +(event.partners.length?'<span class="trip-partners" aria-label="'+E('同伴：'+event.partners.join('、'))+'">'
+   +entityIcon('person')+event.partners.map(name=>'<span>'+E(name)+'</span>').join(' ')+'</span>':'');
  const overview=start!==end;
  tabs.innerHTML=(overview?'<button type="button" data-trip-day="-1" aria-pressed="true">总览</button>':'')
   +days.map((day,i)=>'<button type="button" data-trip-day="'+i+'" aria-pressed="'+!overview+'">'+tripTabLabel(day)+'</button>').join('');
@@ -1701,13 +1699,15 @@ function drawShanghaiOverview(){
 }
 const provinceCities=new Set(['北京市','上海市','天津市','重庆市','香港特别行政区','澳门特别行政区']);
 function annualVisits(names){
- const visits={provinces:new Set(),cities:new Set(),cityPoints:new Map(),shanghaiPoints:[],shanghaiUnlocated:0};
+ const visits={countries:new Set(),provinces:new Set(),cities:new Set(),cityPoints:new Map(),shanghaiPoints:[],shanghaiUnlocated:0};
  const provinceNames=china.features.map(f=>f.properties.name).filter(Boolean);
  for(const name of names){
   const row=baseCoords.get(normalizePlace(name));
   const position=pos(name);
   const region={country:row?.country,province:row?.province,city:row?.city,...position};
   const province=provinceNames.find(n=>n===region.province||shortRegionName(n)===shortRegionName(region.province));
+  const country=normalizePlace(region.country||(province?'中国':''));
+  if(country)visits.countries.add(country);
   const shanghaiAddress=/^(?:中国\s*)?(?:上海市|上海(?=\s|[^\s]{1,6}区))/.test(row?.address?.trim()||'');
   const inShanghai=(!region.country||region.country==='中国')&&(province===shanghaiName||
    !province&&(shortRegionName(region.city)===shortRegionName(shanghaiName)||/^31\d{4}$/.test(row?.adcode||'')||shanghaiAddress));
@@ -1756,14 +1756,15 @@ function annualStats(period){
   const newPlaces=[...places.keys()].filter(name=>!earlierPlaces.has(name)).length;
   const delta=evs.length-reviewEvents(previousReviewYear(start),previousReviewYear(end)).length;
   stats[0]=['事件',evs.length,'('+(delta>0?'+':'')+delta+')','较上年事件数变化'];
-  stats[2]=['到访地点/新地点',places.size,'('+newPlaces+')'];
+  stats[2]=['地点',places.size,'('+newPlaces+')','新到访地点'];
  }
  return {
   ...period,months,visits,shanghaiPoints,stats,
   monthTitle:start.getFullYear()!==end.getFullYear()?'月度分布（按月份汇总）':'月度分布',
-  shanghaiCoverage:'已标注'+shanghaiPoints.length+'个地点',
+  shanghaiCoverage:shanghaiPoints.length+' 个地点',
   shanghaiNote:visits.shanghaiUnlocated?visits.shanghaiUnlocated+' 个地点缺少精确坐标':'',
-  coverage:visits.provinces.size+' 个省份 · '+visits.cities.size+' 个城市',
+  coverage:(visits.countries.size>1?visits.countries.size+' 个国家/地区 · ':'')
+   +visits.provinces.size+' 个省份 · '+visits.cities.size+' 个城市',
   top:[...places].sort((a,b)=>b[1]-a[1]).slice(0,5)
  };
 }
@@ -1810,7 +1811,9 @@ function editMetroExpense(filename){
  };
  return ()=>amount;
 }
+let annualMapResize;
 function renderAnnual(year,custom=$('annual-year-select').value==='range'){
+ annualMapResize?.disconnect();
  const overlay=$('annual-review');
  overlay.dataset.year=year;
  const index=annualAvailableYears.indexOf(year);
@@ -1833,7 +1836,7 @@ function renderAnnual(year,custom=$('annual-year-select').value==='range'){
  const topPlaces=new Set(report.top.map(([name])=>name));
  const highlight=report.shanghaiPoints.some(place=>topPlaces.has(place.name));
  const peak=Math.max(1,...report.months);
- const bars=report.months.map((v,i)=>'<div class="annual-mbar" title="'+(i+1)+'月 · '+v+' 次"><strong>'+v+'</strong><i style="height:'+v/peak*108+'px"></i><span>'+(i+1)+'</span></div>').join('');
+ const bars=report.months.map((v,i)=>'<div class="annual-mbar" title="'+(i+1)+'月 · '+v+' 次"><strong>'+v+'</strong><i style="--month-ratio:'+v/peak+'"></i><span>'+(i+1)+'</span></div>').join('');
  const rows=items=>items.map(([name,total])=>'<div class="annual-row"><span class="annual-name" title="'+E(name)+'">'+E(name)+'</span><b>'+total+'</b></div>').join('')||'<div class="empty">—</div>';
  const palette=colors();
  const toggle=(id,key,label,position='')=>'<label class="annual-map-toggle'+(position?' '+position:'')+'">'
@@ -1851,21 +1854,40 @@ function renderAnnual(year,custom=$('annual-year-select').value==='range'){
   +(report.shanghaiNote?'<p class="annual-note">'+E(report.shanghaiNote)+'</p>':'')+'<div class="annual-stats'+(custom?' annual-stats-range':'')+'">'
   +reviewStatCards(report.stats)
   +(custom?'':'<div class="annual-stat annual-expense"><b><button id="annual-metro-edit" type="button">—</button>'
-   +'<input id="annual-metro-expense" type="number" min="0" step="0.01" inputmode="decimal" aria-label="地铁费用（元）" hidden></b><span>地铁费用（元）</span></div>')
-  +'</div><div class="annual-summary"><section><h3>'+report.monthTitle+'</h3><div class="annual-months">'+bars+'</div></section>'
+   +'<input id="annual-metro-expense" type="number" min="0" step="0.01" inputmode="decimal" aria-label="地铁费用（元）" hidden></b><span>地铁费用</span></div>')
+  +'</div><div class="annual-summary"><section><h3>'+report.monthTitle+'</h3><div class="annual-summary-content annual-months">'+bars+'</div></section>'
   +'<section><h3>'+(highlight?'<i class="annual-top-dot" style="background:'+palette.highlight+'" aria-hidden="true"></i>':'')
-  +'常去地点 Top 5</h3>'+rows(report.top)+'</section></div>';
+  +'常去地点 Top 5</h3><div class="annual-summary-content annual-top-list">'+rows(report.top)+'</div></section></div>';
  const nationalMap=$('annual-map'), shanghaiMap=$('annual-shanghai-map');
- const renderNational=()=>{
+ const isCompact=()=>nationalMap.clientWidth>0&&nationalMap.clientWidth<480;
+ const labelSize=()=>nationalMap.clientWidth?Math.max(20,Math.min(46,Math.round(11200/nationalMap.clientWidth))):20;
+ let compact=isCompact(),nationalFont=labelSize();
+ const paintNational=(target,fontSize)=>{
   const {focusVisitedCities,includeSouthChinaSea}=reviewMapOptions;
-  $('annual-include-south-china-sea').disabled=focusVisitedCities;
-  drawAnnualMap(nationalMap,china,cityBoundaries,report.visits,palette,
-   focusVisitedCities||includeSouthChinaSea,focusVisitedCities);
+  drawAnnualMap(target,china,cityBoundaries,report.visits,palette,
+   focusVisitedCities||includeSouthChinaSea,focusVisitedCities,{fontSize});
  };
- const renderShanghai=()=>drawShanghaiMap(shanghaiMap,cityBoundaries,shanghaiLandmarks,report.shanghaiPoints,
-  {includeChongming:reviewMapOptions.includeChongming,innerRing:reviewMapOptions.innerRing,topPlaces,palette});
+ const renderNational=()=>{
+  $('annual-include-south-china-sea').disabled=reviewMapOptions.focusVisitedCities;
+  paintNational(nationalMap,nationalFont);
+ };
+ const paintShanghai=(target,stacked)=>drawShanghaiMap(target,cityBoundaries,shanghaiLandmarks,report.shanghaiPoints,
+  {includeChongming:reviewMapOptions.includeChongming,innerRing:reviewMapOptions.innerRing,topPlaces,palette,stacked});
+ const renderShanghai=()=>{
+  shanghaiMap.parentElement?.classList.toggle('annual-shanghai-stacked',compact);
+  return paintShanghai(shanghaiMap,compact);
+ };
  renderNational();
  let markers=renderShanghai();
+ if(typeof ResizeObserver==='function'){
+  annualMapResize=new ResizeObserver(()=>{
+   if(!overlay.open)return;
+   const nextLayout=isCompact(),nextFont=labelSize();
+   if(nextFont!==nationalFont){nationalFont=nextFont;renderNational();}
+   if(nextLayout!==compact){compact=nextLayout;markers=renderShanghai();}
+  });
+  annualMapResize.observe(nationalMap);
+ }
  for(const [id,key] of [['annual-focus-visited','focusVisitedCities'],['annual-include-south-china-sea','includeSouthChinaSea'],['annual-include-chongming','includeChongming'],['annual-inner-ring','innerRing']]){
   const control=$(id);
   control.checked=reviewMapOptions[key];
@@ -1889,8 +1911,12 @@ function renderAnnual(year,custom=$('annual-year-select').value==='range'){
  const amount=custom?null:editMetroExpense(period.filename);
  $('annual-export').disabled=false;
  $('annual-export').onclick=()=>{
-  const stats=amount?[...report.stats,['地铁费用（元）',amount()]]:report.stats;
-  return exportAnnual({...report,stats,highlight},nationalMap,shanghaiMap,palette);
+  const stats=amount?[...report.stats,['地铁费用',amount()]]:report.stats;
+  const national=nationalFont===20?nationalMap:document.createElement('canvas');
+  const shanghai=compact?document.createElement('canvas'):shanghaiMap;
+  if(national!==nationalMap)paintNational(national,20);
+  if(shanghai!==shanghaiMap)paintShanghai(shanghai,false);
+  return exportAnnual({...report,stats,highlight},national,shanghai,palette);
  };
 }
 async function downloadPng(image,filename,dialog){
@@ -1953,6 +1979,7 @@ async function openAnnualReview(){
 }
 $('annual').onclick=openAnnualReview;
 $('annual-close').onclick=()=>$('annual-review').close();
+$('annual-review').onclose=()=>{if(!$('annual-review').open)annualMapResize?.disconnect();};
 $('annual-year-select').onchange=event=>{
  const custom=event.target.value==='range';
  const year=custom?Number($('annual-review').dataset.year):Number(event.target.value);

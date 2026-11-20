@@ -166,7 +166,8 @@ export function drawTripShare({title,dates,partners,groups,points,lines,overview
  y+=12;
  label(title,50,palette.deep,{weight:700,maxLines:2});
  label(dates||'',23,palette.muted);
- if(partners.length)label('同伴：'+partners.join('、'),23,palette.muted,{maxLines:3});
+ const partnerTop=y;
+ if(partners.length)label(partners.join(' '),23,palette.muted,{indent:30,maxLines:3});
  const mapTop=showMap&&points.length?y+16:null;
  if(mapTop!==null)y=mapTop+contentWidth;
  y+=18;
@@ -211,6 +212,23 @@ export function drawTripShare({title,dates,partners,groups,points,lines,overview
  ctx.fillStyle=palette.accent;
  ctx.fillRect(0,0,width,10);
  if(mapTop!==null)drawRouteMap(ctx,{points,lines,overview,mapImage},palette,mapTop);
+ if(partners.length){
+  ctx.save();
+  ctx.translate(padding,partnerTop);
+  ctx.strokeStyle=palette.muted;
+  ctx.lineWidth=1.7;
+  ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.arc(12,8,3,0,Math.PI*2);
+  ctx.moveTo(5,20);
+  ctx.lineTo(5,18);
+  ctx.quadraticCurveTo(5,14,9,14);
+  ctx.lineTo(15,14);
+  ctx.quadraticCurveTo(19,14,19,18);
+  ctx.lineTo(19,20);
+  ctx.stroke();
+  ctx.restore();
+ }
  ctx.textBaseline='top';
  for(const {row,size,color,weight,indent,y,maxWidth} of items){
   ctx.font=font(size,weight);

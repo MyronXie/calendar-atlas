@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';import {criterion,toggleCriterion,matche
 
 const exact=searchCriterion('place','a',[e]);
 assert.equal(exact.id,criterion('place','A').id);
-assert.deepEqual(criterionDisplay(exact),{label:'地点',icon:'📍',value:'A'});
+assert.deepEqual(criterionDisplay(exact),{label:'地点',icon:'place',value:'A'});
 assert.ok(!matchesFilters({...e,places:['Annex']},[exact]));
 const partial=searchCriterion('person','张',[{...e,partners:['张三']}]);
 assert.equal(partial.kind,'person');
@@ -12,3 +12,13 @@ assert.ok(!matchesCriterionText(partial,'place','张三'));
 const title=searchCriterion('event','演唱',[{...e,title:'[演唱]音乐节'}]);
 assert.ok(!matchesFilters({...e,title:'[演唱]音乐节'},[title]));
 assert.equal(criterionDisplay(searchCriterion('all','周末',[e])).label,'关键词');
+
+const accented={...e,title:'[展览]Pokémon'};
+const pokemon=searchCriterion('event','Pokemon',[accented]);
+assert.equal(pokemon.value,'Pokémon');
+assert.ok(matchesFilters(accented,[pokemon]));
+assert.ok(matchesFilters(accented,[searchCriterion('all','Pokemon',[accented])]));
+const plain={...e,title:'Pokemon'};
+const both=searchCriterion('event','Pokemon',[accented,plain]);
+assert.ok(matchesFilters(accented,[both])&&matchesFilters(plain,[both]));
+assert.ok(!matchesFilters(accented,[criterion('event','Pokemon')]));
