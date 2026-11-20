@@ -112,7 +112,7 @@ function annualPaths(feature,includeSouthChinaSea){
   return cached[includeSouthChinaSea]??=projectPolygons(includeSouthChinaSea?polygons(feature):withoutSouthChinaSea(feature));
 }
 
-export function drawAnnualMap(canvas, provinces, boundaries, visits, palette, includeSouthChinaSea=true, focusVisitedCities=false) {
+export function drawAnnualMap(canvas, provinces, boundaries, visits, palette, includeSouthChinaSea=true, focusVisitedCities=false, {fontSize=20}={}) {
   const width = 1120, height = 810, padding = 24;
   canvas.width = width;
   canvas.height = height;
@@ -184,7 +184,7 @@ export function drawAnnualMap(canvas, provinces, boundaries, visits, palette, in
     ctx.stroke();
     labelCity(key,key.split('|')[1],[lon,lat]);
   }
-  drawMapLabels(ctx,[...labels.values()],{x:0,y:0,width,height},{fontSize:20,leaders:true,offset:16,maxShift:266});
+  drawMapLabels(ctx,[...labels.values()],{x:0,y:0,width,height},{fontSize,leaders:true,offset:16,maxShift:fontSize>20?306:266});
 }
 
 export const shanghaiName = '上海市';
@@ -226,9 +226,11 @@ export function shanghaiMetroLayers(landmarks){
   return layers;
 }
 export function drawShanghaiMap(canvas, boundaries, landmarks, places, {
-  includeChongming=true,innerRing=false,topPlaces=new Set(),palette=palettes.green,
+  includeChongming=true,innerRing=false,topPlaces=new Set(),palette=palettes.green,stacked=false,
 }={}) {
-  const width = 1120, height = 547, panelWidth=552;
+  const panelWidth=552,panelHeight=547,gap=16;
+  const width=stacked?panelWidth:panelWidth*2+gap;
+  const height=stacked?panelHeight*2+gap:panelHeight;
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
@@ -241,8 +243,8 @@ export function drawShanghaiMap(canvas, boundaries, landmarks, places, {
   const water = landmarks.waterAreas.map(rings=>rings.map(ring=>ring.map(project)));
   const lines = landmarks.features.map(feature=>({...feature,lines:feature.lines.map(line=>line.map(project))}));
   const metro=shanghaiMetroLayers(landmarks).map(layer=>({...layer,paths:layer.lines.map(line=>line.map(project))}));
-  const main = {x:0,y:0,width:panelWidth,height,padding:16};
-  const zoom = {x:width-panelWidth,y:0,width:panelWidth,height,padding:0};
+  const main = {x:0,y:0,width:panelWidth,height:panelHeight,padding:16};
+  const zoom = {x:stacked?0:panelWidth+gap,y:stacked?panelHeight+gap:0,width:panelWidth,height:panelHeight,padding:0};
   const ring = innerRing ? landmarks.features.find(f=>f.name==='内环高架')?.lines : null;
   const [west,south,east,north] = ring?.length
     ? mapBounds([ring.map(line=>[line])]).map((edge,i)=>edge+(i<2?-.003:.003))
@@ -331,7 +333,7 @@ export function drawShanghaiMap(canvas, boundaries, landmarks, places, {
   dots(city,main,places,4.8);
   const outskirts = new Set(['崇明','宝山','嘉定','青浦','松江','金山','奉贤','浦东','闵行']);
   const leftLabels=districts.filter(d=>outskirts.has(d.name)).map(d=>mapLabel(city,d.name,d.center));
-  drawMapLabels(ctx,leftLabels,main,{fontSize:21,maxShift:40});
+  drawMapLabels(ctx,leftLabels,main,{fontSize:stacked?23:21,maxShift:40});
   ctx.restore();
 
   ctx.save();
@@ -359,7 +361,7 @@ export function drawShanghaiMap(canvas, boundaries, landmarks, places, {
       rightLabels.push(mapLabel(center,d.name,[lon,lat]));
     }
   }
-  drawMapLabels(ctx,rightLabels,detailView,{fontSize:20,maxShift:50});
+  drawMapLabels(ctx,rightLabels,detailView,{fontSize:stacked?23:20,maxShift:50});
   ctx.restore();
   return markers;
 }
@@ -371,12 +373,16 @@ export function drawAnnualImage(canvas, report, nationalMap, shanghaiMap, palett
   const nationalHeight = inner * nationalMap.height / nationalMap.width;
   const shanghaiHeight = inner * shanghaiMap.height / shanghaiMap.width;
   const dateOffset=report.dates?34:0, noteOffset=report.shanghaiNote?28:0;
+  const font = '"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif';
   canvas.width = width;
-  canvas.height = Math.ceil(710 + nationalHeight + shanghaiHeight + dateOffset + noteOffset);
   const ctx = canvas.getContext('2d');
+  ctx.font = '700 31px ' + font;
+  const headingWidth=ctx.measureText('全国足迹：').width;
+  ctx.font = '700 23px ' + font;
+  const legendOffset=headingWidth+ctx.measureText(report.coverage).width+12>inner-435?35:0;
+  canvas.height = Math.ceil(710 + nationalHeight + shanghaiHeight + dateOffset + noteOffset + legendOffset);
   ctx.fillStyle = '#fff';
   ctx.fillRect(0,0,width,canvas.height);
-  const font = '"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif';
   function text(value,x,y,size,color = palette.dark,weight = 400) {
     ctx.fillStyle = color;
     ctx.font = `${weight} ${size}px ${font}`;
@@ -412,14 +418,15 @@ export function drawAnnualImage(canvas, report, nationalMap, shanghaiMap, palett
   const nationalY=153+dateOffset;
   text('全国足迹：',margin,nationalY,31,palette.dark,700);
   textWithBoldNumbers(report.coverage,margin+ctx.measureText('全国足迹：').width,nationalY,23);
+  const legendY=nationalY+legendOffset;
   [palette.soft,palette.mid,palette.accent].forEach((color,i) => {
     const x = width - margin - 435 + i * 145;
     ctx.fillStyle = color;
-    ctx.fillRect(x,nationalY-18,20,20);
-    text(annualLegend[i],x + 27,nationalY-1,19);
+    ctx.fillRect(x,legendY-18,20,20);
+    text(annualLegend[i],x + 27,legendY-1,19);
   });
-  ctx.drawImage(nationalMap,margin,nationalY+24,inner,nationalHeight);
-  let y = nationalY + 24 + nationalHeight + 54;
+  ctx.drawImage(nationalMap,margin,legendY+24,inner,nationalHeight);
+  let y = legendY + 24 + nationalHeight + 54;
   text('上海足迹：',margin,y,31,palette.dark,700);
   textWithBoldNumbers(report.shanghaiCoverage,margin+ctx.measureText('上海足迹：').width,y,23);
   ctx.textAlign = 'right';
