@@ -126,6 +126,24 @@ export function dateConditionGroups(criteria){
  });
 }
 
+export function monthlyColumns(width,min,max){
+ const count=max-min+1,years=Math.floor(max/12)-Math.floor(min/12)+1;
+ const columnWidth=Math.floor(width/count)||width/count;
+ const spare=Math.max(0,width-columnWidth*count);
+ const yearGap=years>1?Math.min(3,Math.floor(spare/(years-1))):0;
+ const inset=(spare-yearGap*(years-1))/2;
+ const groups=[];
+ let left=inset;
+ for(let start=min;start<=max;){
+  const year=Math.floor(start/12),end=Math.min(max+1,(year+1)*12);
+  const width=(end-start)*columnWidth;
+  groups.push({year,start,end,left,width});
+  left+=width+yearGap;
+  start=end;
+ }
+ return {columnWidth,yearGap,groups};
+}
+
 export function periodRange(first,last,monthly){
  const boundary=(index,end)=>{
   if(!monthly)return String(index).padStart(4,'0')+(end?'-12-31':'-01-01');
