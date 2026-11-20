@@ -52,10 +52,9 @@ body.settings-open #settings-drawer{transform:translateX(0);visibility:visible}
 .section-chevron{width:12px;font-size:12px;color:var(--accent)}
 .section-heading[aria-expanded=false] .section-chevron{transform:rotate(-90deg)}
 :is(.app-toolbar button,.eventsearchbar button,.meta-refresh,.annual-nav,#events-back-top){display:inline-flex;align-items:center;justify-content:center;gap:4px}
-#brushselection .entity-icon{width:11px;height:14px}
 #timeline-body,#eventlist-body{padding:0 16px 14px}
 
-.periodtools{display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0}.periodtools select{width:66px}
+.periodtools{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
 /* Settings lists: aligned row heights, small semantic tags, same icon buttons. */
 .managebar,.blacklist-toolbar{display:flex;align-items:center;gap:7px;margin:12px 0 8px}.managebar input,.blacklist-toolbar input{flex:1;min-width:0}.managebar select,.blacklist-toolbar select{width:112px}
 .rankrow,.blacklist-row,.placeitem{min-height:38px;border-bottom:1px solid var(--line);padding:8px 0;font-size:var(--row-font)}
@@ -107,45 +106,62 @@ dialog{width:520px;max-width:94vw;max-height:92vh;overflow:auto;padding:22px;bor
 .visit-marker{background:var(--accent);border:2px solid #fff;border-radius:50%;box-shadow:0 1px 7px #0004;color:#fff;text-align:center;font:12px/24px 'Segoe UI',sans-serif}.single-emoji{font:20px/24px 'Segoe UI Emoji','Apple Color Emoji',sans-serif}.visit-marker:has(.single-emoji){background:var(--deep);border-color:var(--mid)}
 .marker-cluster-small,.marker-cluster-medium,.marker-cluster-large{background:var(--mid)}.marker-cluster div{background:var(--accent);color:#fff;font-size:12px}
 .leaflet-popup-content{font:13px/1.8 'Segoe UI','Microsoft YaHei',sans-serif;overflow-wrap:anywhere}.leaflet-tooltip.atlas-tooltip{width:max-content!important;min-width:100px;max-width:min(420px,75vw)!important;white-space:normal!important;word-break:normal!important;overflow-wrap:break-word!important;writing-mode:horizontal-tb!important;font:13px/1.6 'Segoe UI','Microsoft YaHei',sans-serif;box-sizing:border-box}.leaflet-control-attribution{font-size:10px!important}
-/* Timeline: time selection is dark/light; non-time filters use contrast color. */
+/* The timeline uses one palette for all ranges and filters. */
+.timelinehead{justify-content:space-between}
+.timeline-title{display:flex;align-items:baseline;gap:2px;min-width:0;white-space:nowrap}
+#timeline-range{padding:0;min-height:32px;border:0;background:none;font-size:14px;font-weight:650;color:var(--deep);font-variant-numeric:tabular-nums}
+#timeline-range:hover{text-decoration:underline;text-underline-offset:3px}
+.timelinehead .unit-toggle{margin-left:auto;flex:none}
+@media(max-width:480px){#timeline-range{font-size:12px}.timelinehead .unit-toggle{margin-left:0}}
 #timeline-body{container:timeline-body / inline-size}
-.timeline-day{display:grid;gap:8px;min-width:0}
-.timeline-day-range{width:min(100%,430px);min-width:0}
-.timeline-day-dates{display:grid;grid-template-columns:minmax(0,1fr) 14px minmax(0,1fr);gap:5px}
-.timeline-day-dates label{position:relative;margin:0;min-width:0;contain:inline-size}
-.timeline-day-dates input{display:block;box-sizing:border-box;width:100%;max-width:100%;min-width:0;min-height:36px;margin:0;padding-inline:6px;overflow:hidden;-webkit-appearance:none;appearance:none}
-.timeline-day-dates input::-webkit-date-and-time-value{min-width:0;text-align:start;margin:0}
-.timeline-day-dates input::-webkit-datetime-edit{min-width:0;padding:0}
-.timeline-day-arrow{display:grid;place-items:center;height:36px;color:var(--muted)}
-#timeline-day-status{display:block;margin-top:5px;color:var(--highlight)}
-.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-.day-frequency{display:grid;justify-items:start;min-width:0}
-.day-frequency .timeline-bars{width:100%}
-.frequency-bar.selected :is(.year-full,.year-short){font-weight:700}
+.timeline-range-dialog.atlas-dialog{width:380px}
+.timeline-range-dialog h2{margin:0 0 12px}
+.timeline-range-fields{display:grid;gap:8px;grid-template-columns:repeat(2,minmax(0,1fr))}
+.timeline-range-fields label{min-width:0;margin:0}
+.timeline-range-fields input{box-sizing:border-box;width:100%;min-width:0;height:36px;padding-inline:6px;-webkit-appearance:none;appearance:none}
+.timeline-range-fields input::-webkit-date-and-time-value{text-align:start;min-width:0}
+.timeline-range-fields input::-webkit-datetime-edit{min-width:0;padding:0}
+#timeline-range-error{color:var(--highlight);margin:8px 0}
+#timeline-range-form .quick{justify-content:flex-end;margin-top:12px}
+@media(max-width:350px){.timeline-range-fields{grid-template-columns:minmax(0,1fr)}}
 .timeline-stats-panel{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:8px;margin-top:9px;padding-top:7px;border-top:1px solid var(--line)}
 #timeline-stats-toggle{min-height:26px;font-size:12px}
+#timeline-stat-content{min-width:0}
 .timeline-stats{display:grid;grid-template-columns:var(--timeline-stat-columns,repeat(4,minmax(0,1fr)));min-width:0;gap:5px;margin:0}
 .timeline-stats div{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:baseline;gap:4px;min-width:0;padding:3px 6px;background:var(--soft);border-radius:var(--radius)}
 .timeline-stats dt{font-size:12px;white-space:nowrap}
 .timeline-stats dd{min-width:0;margin:0;color:var(--deep);text-align:right;font-size:14px;font-weight:650;font-variant-numeric:tabular-nums}
 .timeline-stat-number{display:inline-block;white-space:nowrap}
 .timeline-stat-hit{color:var(--highlight)}
+.timeline-stat-dates{color:var(--accent)}
+#timeline-stats-key{display:block;font-size:11px;color:var(--muted);margin-top:5px}
 @container timeline-body (max-width:570px){
  .timeline-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
-}
-@container timeline-body (max-width:255px){
- .timeline-day-dates{grid-template-columns:minmax(0,1fr)}
- .timeline-day-arrow{display:none}
 }
 .barcount,.bar-match-count{position:absolute;left:50%;z-index:2;font-size:11px;line-height:12px;font-variant-numeric:tabular-nums;white-space:nowrap;transform:translateX(-50%) scaleX(min(1,calc(var(--count-column,40) / var(--count-digits) / var(--count-character,6.4))))}
 .barcount{bottom:calc(100% + 3px)}
 .bar-match-count{bottom:calc(var(--matched-height) + 2px);color:#fff;text-shadow:-1px 0 var(--deep),1px 0 var(--deep),0 -1px var(--deep),0 1px var(--deep);font-weight:650}
 .bar-stack.inside .bar-match-count{bottom:calc(var(--matched-height) - 13px);color:var(--bar-match-ink,#000);text-shadow:none}
 .bar-stack.raised-total .barcount{bottom:calc(100% + 15px)}
-.timeline-scroll{overflow:visible;padding:0 3px 8px}#timeline-track{position:relative;width:100%;min-width:0!important}.timeline-bars{display:flex;align-items:end;gap:4px;height:138px}.yearbar{display:flex;flex-direction:column;justify-content:end;align-items:center;gap:7px;flex:1 1 0;width:0;min-width:0;height:132px;min-height:0;padding:0 1px;border:0;background:none!important;font-size:11px;color:var(--muted)}.yearbar.selected{color:var(--accent)}
-.yearbar .bar-stack{display:block;position:relative;flex-shrink:0;width:86%}.yearbar .bar-stack i{position:absolute;bottom:0;left:0;display:block;width:100%;border-radius:2px 2px 0 0}.yearbar .bar-original{height:100%;background:var(--mid);opacity:.38}.yearbar.selected .bar-original{background:var(--accent);opacity:.9}.yearbar .bar-matched{height:var(--matched-height);background:var(--highlight)!important;opacity:1;z-index:1}
-#timeline-track.monthly #yearbars{height:110px;gap:0}#timeline-track.monthly .yearbar{height:100px;gap:0;padding:0}#timeline-track.monthly .bar-stack{width:90%}#timeline-track.monthly .year-light .bar-original{background:var(--soft);opacity:1}#timeline-track.monthly .year-dark .bar-original{background:var(--mid);opacity:.45}#timeline-track.monthly .selected.year-light .bar-original{background:var(--accent);opacity:.65}#timeline-track.monthly .selected.year-dark .bar-original{background:var(--accent);opacity:1}
-#brushtrack{position:relative;height:24px;background:var(--soft);margin:6px 0 3px;border-radius:var(--radius);touch-action:none;cursor:crosshair}#brushselection{position:absolute;height:100%;min-width:14px;background:var(--mid);border-radius:4px;cursor:grab;touch-action:none}#brushselection:active{cursor:grabbing}#brushleft,#brushright{position:absolute;top:-3px;bottom:-3px;width:14px;height:30px;min-height:0;padding:0;border:1px solid var(--accent);border-radius:4px;background:var(--soft);color:var(--accent);font-size:10px;line-height:1;cursor:ew-resize;touch-action:none;user-select:none}#brushleft{left:-3px}#brushright{right:-3px}
+.timeline-bars{display:flex;align-items:end;gap:4px;height:126px}
+#yearbars{touch-action:pan-y;user-select:none;cursor:crosshair}
+#yearbars .yearbar{cursor:inherit}
+.yearbar{display:flex;flex-direction:column;justify-content:end;align-items:center;gap:6px;flex:1 1 0;width:0;min-width:0;height:120px;min-height:0;padding:0 1px 3px;border:0;background:transparent;font-size:11px;color:var(--muted)}
+.yearbar:focus-visible{outline-offset:-2px;z-index:3}
+.yearbar.selected{color:var(--accent);font-weight:700}
+#yearbars:not(.choosing-range) .selected,#yearbars .period-preview{background:linear-gradient(transparent 84%,var(--soft) 84%);box-shadow:inset 0 -2px var(--mid)}
+.frequency-bar.selected{box-shadow:inset 0 -2px var(--accent)}
+.yearbar .bar-stack{display:block;position:relative;flex-shrink:0;width:86%}
+.yearbar .bar-stack i{position:absolute;bottom:0;left:0;display:block;width:100%;border-radius:2px 2px 0 0;pointer-events:none}
+.yearbar .bar-original{height:100%;background:var(--soft)}
+.yearbar .bar-scoped{height:var(--scoped-height);background:var(--accent)}
+.yearbar .bar-matched{height:var(--matched-height);background:var(--highlight);z-index:1}
+#timeline-track.monthly #yearbars{height:110px;gap:0}
+#timeline-track.monthly .yearbar{height:105px;gap:0;padding:0 0 3px}
+#timeline-track.monthly .bar-stack{width:92%}
+#timeline-track.monthly .year-start{border-left:1px solid var(--line)}
+#timeline-month-axis{position:relative;height:16px;font-size:10px;color:var(--muted)}
+#timeline-month-axis span{position:absolute;top:2px}
 @media(max-width:1100px){body{--drawer-width:330px;--drawer-padding:12px}}
 @media(max-width:1100px),(max-height:760px){.canvaswrap{height:40vh;min-height:200px}}
 @media(max-width:650px){body{--drawer-width:min(88vw,360px);--drawer-padding:12px}aside{box-shadow:0 0 20px #253a2922}main,body.settings-open main{margin-left:0;margin-right:0}.mapcard,.timeline-main,.events{margin:8px}.mapbar,.timelinehead,.eventhead{padding:9px 12px}#timeline-body,#eventlist-body{padding:0 12px 12px}.canvaswrap{height:32vh;min-height:170px}.timelinehead{flex-wrap:wrap;gap:6px}.periodtools{gap:4px}.eventsearchbar{flex-wrap:wrap}.eventsearchbar .eventsearch{min-width:100px}.eventsearchbar select{width:72px}.place-coordinates{font-size:10px}.place-type{max-width:45px}.barcount,.bar-match-count{font-size:9px;--count-character:5.4}.yearbar{font-size:9px}.fieldrow{flex-wrap:wrap}.fieldrow label{flex:1 1 120px}}
@@ -163,10 +179,6 @@ dialog{width:520px;max-width:94vw;max-height:92vh;overflow:auto;padding:22px;bor
 .leaflet-atlas-labels-pane{z-index:610;pointer-events:none}
 .vector-pinching .leaflet-atlas-labels-pane{visibility:hidden}
 
-.brush-label{position:absolute;top:50%;font-size:11px;color:var(--accent);font-variant-numeric:tabular-nums;pointer-events:none;white-space:nowrap;z-index:2}#timeline-track.monthly .bar-stack{width:100%}#timeline-track.monthly .yearbar.year-start{box-shadow:-2px 0 0 var(--soft)}
-.brush-label{transform:translateY(-50%)}
-#brushtrack.stacked-endpoint{margin-bottom:24px}
-#brushtrack.stacked-endpoint #period-end{top:calc(100% + 5px);transform:none}
 .yearbar .year-short{display:none}
 #timeline-track.compact-years #yearbars,#day-frequency-bars.compact-years{gap:1px}
 .compact-years .yearbar{gap:4px;padding:0}
@@ -252,7 +264,7 @@ dialog{width:520px;max-width:94vw;max-height:92vh;overflow:auto;padding:22px;bor
 .shanghai-rail-station-symbol::after{content:"";position:absolute;bottom:-2px;left:1px;right:1px;height:1px;background:currentColor}
 
 .rankrow.selected .label,.entitylink[aria-pressed=true],#activefilters strong,
-.brush-label,#yearbars.single-selection .yearbar.selected :is(.year-full,.year-short),.unit-toggle button.active,
+.unit-toggle button.active,
 .annual-row:first-of-type .annual-name{font-weight:600}
 .region-label.visited-label{font-weight:650}
 .annual-map-head h3 strong{font-weight:700;color:var(--deep)}
@@ -321,11 +333,10 @@ body:has(.trip-dialog[open],.annual-card[open]){overflow:hidden}
 .event-places-more{position:absolute;right:0;top:0}
 #events-back-top{position:fixed;z-index:800;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));width:38px;height:38px;padding:0;border-radius:50%;color:var(--deep);background:var(--soft);box-shadow:0 2px 8px #0002;font-size:20px}
 @media(max-width:650px){
- .timeline-day{gap:8px}
  .frequency-bar{font-size:clamp(7px,2.2vw,10px)}
  .annual-summary{grid-template-columns:minmax(0,.88fr) minmax(0,1.12fr);gap:6px}
  .annual-months{gap:0}
- .timeline-day-dates input{font-size:16px}
+ .timeline-range-fields input{font-size:16px}
  .maptools select{min-width:0;padding-inline:5px;font-size:12px}
  #level,#reset{flex:none}
  #reset{display:grid;place-items:center;width:34px;padding:0}
