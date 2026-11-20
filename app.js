@@ -107,6 +107,7 @@ function refresh({timeline=true,fitBeforeDraw=false}={}){
  if(rankDrawerOpen)renderRank();
  renderEvents();
  if(settingsOpen&&activePanel==='manage')renderPlaces();
+ fitSectionTools();
  if(fitBeforeDraw)fitPoints();
  draw();
 }
@@ -146,12 +147,10 @@ function activityStats(events,rows,places=new Set(rows.flatMap(row=>row.places))
  ];
 }
 function renderDateConditions(criteria){
- const chips=$('timeline-date-conditions'),indicator=$('timeline-range-indicator');
+ const chips=$('timeline-date-conditions');
  const groups=dateConditionGroups(criteria);
- chips.hidden=indicator.hidden=!groups.length;
- const description=groups.map(group=>group.label).join(' | ');
- indicator.title=description;
- indicator.setAttribute('aria-label','日期条件：'+description);
+ chips.hidden=!groups.length;
+ updateFilterHint('timeline-range-indicator',groups.map(group=>group.label));
  chips.innerHTML=groups.map(({label},index)=>'<button type="button" data-remove-date="'+index
   +'" aria-label="'+E('移除日期条件：'+label)+'"><strong>'+E(label)+'</strong>'+entityIcon('dialog-close','filter-chip-dismiss')+'</button>').join('');
  for(const button of chips.querySelectorAll('[data-remove-date]'))button.onclick=()=>{
@@ -186,18 +185,6 @@ function renderTimeStats(events,scoped,matched,from,to){
  stats.style.setProperty('--timeline-stat-columns',weights.join(' '));
  fitTimeStatValues();
 }
-function setTimeStatsVisibility(){
- const hidden=Boolean(collapsedSections.timeStats);
- $('timeline-stat-content').hidden=hidden;
- $('timeline-stats-toggle').setAttribute('aria-expanded',String(!hidden));
- if(!hidden)fitTimeStatValues();
-}
-$('timeline-stats-toggle').onclick=()=>{
- collapsedSections.timeStats=!collapsedSections.timeStats;
- try{localStorage.setItem('atlas-sections',JSON.stringify(collapsedSections));}catch{}
- setTimeStatsVisibility();
-};
-setTimeStatsVisibility();
 let focusChartData;
 let focusUnit='month';
 const frequencyButtons=document.querySelectorAll('[data-frequency]');
@@ -336,7 +323,7 @@ function eventEntities(names,kind,index,visible,expanded=false){
  const listId=isPlace?' id="eventplaces-'+index+'"':'';
  const icon=entityIcon(kind,'event-entity-icon');
  const more=isPlace?'<button type="button" class="event-action event-places-more" data-place-toggle="'+index+'" aria-controls="eventplaces-'+index
-  +'" aria-expanded="'+expanded+'" aria-label="'+(expanded?'收起地点':'展开地点')+'" hidden>'+(expanded?'收起':'展开')+'</button>':'';
+  +'" aria-expanded="'+expanded+'" aria-label="'+(expanded?'收起地点':'展开地点')+'" title="'+(expanded?'收起地点':'展开地点')+'" hidden>'+entityIcon('chevron')+'</button>':'';
  return '<div class="'+wrapper+'"'+hidden+'>'+icon+'<div class="event-entity-list"'+listId+'>'+links+'</div>'+more+'</div>';
 }
 let eventLayoutFrame=0;
@@ -356,35 +343,24 @@ function scheduleEventLayout(){
  });
 }
 if(typeof ResizeObserver==='function')new ResizeObserver(scheduleEventLayout).observe($('events'));
-let eventJumpFrame=0;
-const toolbarBottom=()=>document.querySelector('.app-toolbar')?.getBoundingClientRect().bottom||0;
-function scheduleEventJump(){
- if(eventJumpFrame||typeof requestAnimationFrame!=='function')return;
- eventJumpFrame=requestAnimationFrame(()=>{
-  eventJumpFrame=0;
-  $('events-back-top').hidden=$('eventtitle').getBoundingClientRect().bottom>toolbarBottom();
- });
+function updateToolbarHeight(){
+ const toolbar=document.querySelector('.app-toolbar');
+ if(toolbar)document.body.style.setProperty('--toolbar-height',toolbar.offsetHeight+'px');
 }
-globalThis.addEventListener?.('scroll',scheduleEventJump,{passive:true});
-globalThis.addEventListener?.('resize',scheduleEventJump);
-function scrollToHeading(id){
- if(typeof window==='undefined')return;
- const heading=$(id);
- window.scrollBy({top:heading.getBoundingClientRect().top-toolbarBottom()-6,
-  behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
- heading.focus({preventScroll:true});
+const toolbar=document.querySelector('.app-toolbar');
+if(toolbar&&typeof ResizeObserver==='function')new ResizeObserver(updateToolbarHeight).observe(toolbar);
+updateToolbarHeight();
+function revealTimeline(){
+ const heading=$('timeline-header');
+ heading.scrollIntoView?.({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
+ $('collapse-timeline').focus?.({preventScroll:true});
 }
-$('events-back-top').onclick=()=>scrollToHeading('collapse-eventlist');
 function selectEventRange(event){
  const {start,end}=tripDates(event);
  selectedRange=[start,end];
- if(collapsedSections.timeline){
-  collapsedSections.timeline=false;
-  localStorage.setItem('atlas-sections',JSON.stringify(collapsedSections));
-  collapseSection('timeline');
- }
+ if(collapsedSections.timeline)setSectionCollapsed('timeline',false);
  setTimeMode('focus');
- scrollToHeading('collapse-timeline');
+ if(typeof matchMedia==='function')revealTimeline();
 }
 function renderEvents(){
  const rows=filtered,container=$('events');
@@ -403,7 +379,7 @@ function renderEvents(){
   const time='<span class="event-date">'+dateField('year',year)+'/'+dateField('month',month)+'/'+dateField('date',date)
    +'<span class="event-weekday-wide">'+weekday+'</span></span> <span class="event-clock">'+dateField('hour',hour+':'+minute)
    +'<span class="event-weekday-narrow">'+weekday+'</span></span>';
-  const trip=isTrip(event)?'<button type="button" class="event-action event-trip" data-trip-event="'+i+'" aria-label="查看行程详细">详细</button>':'';
+  const trip=isTrip(event)?'<button type="button" class="event-action event-trip" data-trip-event="'+i+'" aria-label="查看行程详细" title="查看行程详细">'+entityIcon('trip')+'</button>':'';
   return '<article class="event"><div class="eventrow"><button type="button" class="event-time" data-event-range="'+i
    +'" title="查看这段时间的事件"><time datetime="'+event.start.toISOString()+'">'+time+'</time></button>'
    +'<div class="event-details"><div class="eventname"><button class="eventtitle" data-filter-event="'+E(event.title)+'" title="按组别与事件筛选">'+eventTitleText(event.title)+'</button>'+trip+'</div>'
@@ -417,7 +393,7 @@ function renderEvents(){
   if(expanded)expandedEventPlaces.add(key);
   else expandedEventPlaces.delete(key);
   button.parentElement.classList.toggle('is-expanded',expanded);
-  button.textContent=expanded?'收起':'展开';
+  button.title=expanded?'收起地点':'展开地点';
   button.setAttribute('aria-expanded',String(expanded));
   button.setAttribute('aria-label',expanded?'收起地点':'展开地点');
   scheduleEventLayout();
@@ -430,11 +406,11 @@ function renderEvents(){
  container.querySelectorAll('[data-filter-event]').forEach(el=>el.onclick=()=>{activeCriteria=eventCriteria(activeCriteria,el.dataset.filterEvent);refresh();fitPoints();});
  container.querySelectorAll('[data-trip-event]').forEach(el=>el.onclick=()=>openTrips(rows[+el.dataset.tripEvent]));
  scheduleEventLayout();
- scheduleEventJump();
  renderFilterChips();
 }
 function renderFilterChips(){
  const container=$('activefilters');
+ updateFilterHint('event-filter-indicator',appliedCriteria.filter(c=>c.kind!=='time').map(c=>criterionDisplay(c).value));
  const chip=(c,attribute)=>{
   const {label,icon,value}=criterionDisplay(c);
   return '<button '+attribute+' aria-label="'+E('移除'+label+'筛选：'+value)+'">'
@@ -813,29 +789,60 @@ for(const id of countOptionIds)$(id).onchange=()=>{
  refresh({timeline:id!=='merge-same-day'});
 };
 function ensureTimeline(){const key=JSON.stringify([source.length,yearMin,yearMax,$('recurring').checked,$('exclude').checked,rules,csvVersion]);if(key!==timelineKey){timelineEvents=applyRules(expand(source,new Date(yearMin,0,1),new Date(yearMax,11,31,23,59,59,999),$('recurring').checked).events,rules,$('exclude').checked,new Set()).events;timelineKey=key;}}
-const chartHeightInput=$('timeline-height');
-let chartHeight=Number(localStorage.getItem('atlas-timeline-height'))||150;
-chartHeight=Math.max(110,Math.min(230,chartHeight));
-chartHeightInput.value=chartHeight;
-function applyChartHeight(){
- document.body.style.setProperty('--timeline-chart-height',chartHeight+'px');
- $('timeline-height-label').textContent=chartHeight+' px';
+function heightPreference(id,{min,max,fallback,apply}){
+ const input=$(id),label=$(id+'-label'),key='atlas-'+id;
+ let stored=Number(localStorage.getItem(key));
+ if(!Number.isFinite(stored)||stored<min||stored>max)stored=0;
+ const update=(value,customized)=>{
+  input.value=String(value);
+  label.textContent=value+' px';
+  apply(value,customized);
+ };
+ update(stored||fallback(),Boolean(stored));
+ input.oninput=()=>update(Number(input.value),true);
+ input.onchange=()=>{
+  stored=Number(input.value);
+  localStorage.setItem(key,String(stored));
+ };
+ return ()=>{if(!stored)update(fallback(),false);};
 }
-applyChartHeight();
+let chartHeight;
+heightPreference('timeline-height',{
+ min:110,max:230,fallback:()=>150,
+ apply(value){
+  chartHeight=value;
+  document.body.style.setProperty('--timeline-chart-height',value+'px');
+ },
+});
+const chartHeightInput=$('timeline-height'),changeChartHeight=chartHeightInput.oninput;
 chartHeightInput.oninput=()=>{
- chartHeight=Number(chartHeightInput.value);
- applyChartHeight();
+ changeChartHeight();
  if(focusView())renderFocusChart();
  else renderOverviewChart();
 };
-chartHeightInput.onchange=()=>localStorage.setItem('atlas-timeline-height',String(chartHeight));
+function defaultMapHeight(){
+ if(typeof matchMedia!=='function')return 360;
+ const viewport=window.innerHeight;
+ const responsive=matchMedia('(max-width:650px)').matches?Math.max(170,viewport*.32):
+  matchMedia('(max-width:1100px),(max-height:760px)').matches?Math.max(200,viewport*.4):Math.max(300,viewport*.58);
+ return Math.max(170,Math.min(800,Math.round(responsive/10)*10));
+}
+const syncMapHeight=heightPreference('map-height',{
+ min:170,max:800,fallback:defaultMapHeight,
+ apply(value,customized){
+  document.body.style.setProperty('--map-height',customized?value+'px':'');
+  if(!$('map-body').hidden)map.invalidateSize({pan:false});
+ },
+});
+globalThis.addEventListener?.('resize',syncMapHeight,{passive:true});
 function barDescription(label,total,matched,scoped){
  return label+' · '+[matched,scoped,total].filter(value=>value!==null).join(' / ')+' 条事件';
 }
 function timelineBar({total,inRange,scoped,matched,peak,label,shortLabel}){
  const plot=chartHeight-54;
  const range=barHeights(total,inRange,peak,plot),dates=barHeights(total,scoped??0,peak,plot),hit=barHeights(total,matched??0,peak,plot);
- const layout=timelineCountLayout(range.total,dates.matched,hit.matched);
+ const distinctDate=scoped!==total&&scoped!==matched;
+ const layout=timelineCountLayout(range.total,distinctDate?dates.matched:0,hit.matched);
  const count=(value,className,position)=>position?'<span class="bar-number '+className+(position.inside?' inside':'')
   +'" style="--count-digits:'+String(value).length+';bottom:'+position.bottom+'px" aria-hidden="true">'+value+'</span>':'';
  return '<span class="bar-stack" style="height:'+range.total+'px;--range-height:'+range.matched+'px;--scoped-height:'+dates.matched+'px;--matched-height:'+hit.matched+'px">'
@@ -954,20 +961,103 @@ $('timeline-all').onclick=()=>{
  setTimeRange(dateInputValue(new Date(first)),dateInputValue(new Date(Math.max(last,Date.now()))));
 };
 
-let timelineHoldHideTimer;
+function fitSectionTools(){
+ for(const id of ['timeline-header','map-header']){
+  const header=$(id),title=header.querySelector('.header-title'),tools=header.querySelector('.header-tools');
+  if(!title||!tools||tools.hidden)continue;
+  header.classList.remove('compact-tools');
+  const style=getComputedStyle(header);
+  const available=header.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
+  const desired=title.getBoundingClientRect().width+tools.getBoundingClientRect().width+parseFloat(style.columnGap);
+  header.classList.toggle('compact-tools',desired>available+.5);
+ }
+}
+if(typeof ResizeObserver==='function'){
+ const widths=new Map();
+ const observer=new ResizeObserver(entries=>{
+  if(entries.every(entry=>widths.get(entry.target)===entry.contentRect.width))return;
+  for(const {target,contentRect} of entries)widths.set(target,contentRect.width);
+  fitSectionTools();
+ });
+ for(const id of ['timeline-header','map-header'])observer.observe($(id));
+}
+
+const floatingHint=$('floating-hint');
+let hintOwner,hintLocked=false,hintTimer;
+function hideFloatingHint(){
+ clearTimeout(hintTimer);
+ hintOwner?.removeAttribute?.('aria-describedby');
+ hintOwner=null;
+ hintLocked=false;
+ floatingHint.hidden=true;
+}
+function showFloatingHint(owner,label,locked=false){
+ hideFloatingHint();
+ hintOwner=owner;
+ hintLocked=locked;
+ floatingHint.textContent=label;
+ floatingHint.hidden=false;
+ const anchor=owner.getBoundingClientRect(),{width,height}=floatingHint.getBoundingClientRect();
+ const left=Math.min(window.innerWidth-width-6,Math.max(6,(anchor.left+anchor.right-width)/2));
+ const top=anchor.top-height-7>=6?anchor.top-height-7:Math.min(window.innerHeight-height-6,anchor.bottom+7);
+ floatingHint.style.left=left+'px';
+ floatingHint.style.top=Math.max(6,top)+'px';
+ owner.setAttribute('aria-describedby','floating-hint');
+}
+function updateFilterHint(id,values){
+ const indicator=$(id),description=values.join(' | ');
+ if(hintOwner===indicator&&indicator.dataset.hint!==description)hideFloatingHint();
+ indicator.dataset.hint=description;
+ indicator.hidden=!description;
+}
+for(const id of ['timeline-range-indicator','event-filter-indicator']){
+ const indicator=$(id);
+ let touchGesture,longPressed=false;
+ const clearTouch=()=>{clearTimeout(touchGesture?.timer);touchGesture=null;};
+ const show=locked=>{if(indicator.dataset.hint)showFloatingHint(indicator,indicator.dataset.hint,locked);};
+ indicator.onpointerenter=event=>{if(event.pointerType==='mouse')show(false);};
+ indicator.onpointerleave=()=>{if(hintOwner===indicator&&!hintLocked)hideFloatingHint();};
+ indicator.onblur=()=>{if(hintOwner===indicator)hideFloatingHint();};
+ indicator.onpointerdown=event=>{
+  clearTouch();
+  longPressed=false;
+  if(event.pointerType!=='touch')return;
+  touchGesture={x:event.clientX,y:event.clientY,timer:setTimeout(()=>{
+   longPressed=true;
+   show(true);
+  },430)};
+ };
+ indicator.onpointermove=event=>{
+  if(touchGesture&&Math.hypot(event.clientX-touchGesture.x,event.clientY-touchGesture.y)>6)clearTouch();
+ };
+ indicator.onpointerup=clearTouch;
+ indicator.onpointercancel=()=>{clearTouch();if(hintOwner===indicator)hideFloatingHint();};
+ indicator.oncontextmenu=event=>{if(touchGesture||longPressed)event.preventDefault();};
+ indicator.onclick=()=>{
+  if(longPressed){longPressed=false;return;}
+  if(hintOwner===indicator&&hintLocked)hideFloatingHint();
+  else show(true);
+ };
+}
+document.addEventListener?.('pointerdown',event=>{
+ if(hintOwner&&!hintOwner.contains(event.target))hideFloatingHint();
+},true);
+document.addEventListener?.('scroll',hideFloatingHint,{capture:true,passive:true});
+globalThis.addEventListener?.('resize',hideFloatingHint,{passive:true});
+document.addEventListener?.('keydown',event=>{
+ if(event.key==='Escape'&&hintOwner){
+  hideFloatingHint();
+  event.stopImmediatePropagation();
+ }
+},true);
+
 function enableTimelineHold(chart){
  let gesture,handled;
- const tip=$('timeline-hold-tip');
- const hide=()=>{
-  tip.hidden=true;
-  clearTimeout(timelineHoldHideTimer);
- };
  const stop=()=>{
   clearTimeout(gesture?.timer);
   gesture=null;
  };
  chart.addEventListener('pointerdown',event=>{
-  hide();
   stop();
   handled=null;
   if(event.pointerType!=='touch'||!event.isPrimary||!matchMedia('(orientation: portrait)').matches)return;
@@ -976,14 +1066,8 @@ function enableTimelineHold(chart){
   gesture={id:event.pointerId,x:event.clientX,y:event.clientY,timer:setTimeout(()=>{
    if(!bar.isConnected)return;
    handled=event.pointerId;
-   tip.textContent=bar.title;
-   tip.hidden=false;
-   const {width,height}=tip.getBoundingClientRect(),rect=bar.getBoundingClientRect();
-   const left=Math.min(window.innerWidth-width-6,Math.max(6,rect.left+(rect.width-width)/2));
-   const top=event.clientY>height+20?event.clientY-height-12:event.clientY+14;
-   tip.style.left=left+'px';
-   tip.style.top=top+'px';
-   timelineHoldHideTimer=setTimeout(hide,2000);
+   showFloatingHint(bar,bar.title);
+   hintTimer=setTimeout(hideFloatingHint,2000);
   },460)};
  },true);
  chart.addEventListener('pointermove',event=>{
@@ -991,23 +1075,22 @@ function enableTimelineHold(chart){
   if(Math.hypot(event.clientX-gesture.x,event.clientY-gesture.y)<5)return;
   stop();
   handled=null;
-  hide();
+  hideFloatingHint();
  },true);
  chart.addEventListener('pointerup',stop,true);
  chart.addEventListener('pointercancel',()=>{
   stop();
   handled=null;
-  hide();
+  hideFloatingHint();
  },true);
  chart.addEventListener('click',event=>{
-  if(handled===null||handled===undefined||event.detail===0)return;
+  if(handled==null||event.detail===0)return;
   event.preventDefault();
   event.stopPropagation();
  },true);
  chart.addEventListener('contextmenu',event=>{
   if(gesture||handled!=null)event.preventDefault();
  });
- globalThis.addEventListener?.('scroll',hide,{passive:true});
  return event=>handled!=null&&handled===event.pointerId;
 }
 const overviewHold=enableTimelineHold(overviewBars);
@@ -1324,7 +1407,7 @@ function collapseSection(key){
  $(key+'-body').hidden=closed;
  $('collapse-'+key).setAttribute('aria-expanded',String(!closed));
  if(key==='timeline')$('timeline-controls').hidden=closed;
- if(key==='eventlist')$('event-display-options').hidden=closed;
+ if(key==='eventlist')$('event-display-options').hidden=$('event-filters').hidden=closed;
  if(key==='map'){
   $('map-tools').hidden=closed;
   if(!closed)map.invalidateSize({pan:false});
@@ -1335,9 +1418,11 @@ function setSectionCollapsed(key,closed){
  localStorage.setItem('atlas-sections',JSON.stringify(collapsedSections));
  collapseSection(key);
  if(key==='map'&&!closed){
+  fitSectionTools();
   draw();
   fitPoints();
  }
+ if(key==='timeline'&&!closed)fitSectionTools();
 }
 for(const key of ['map','timeline','eventlist']){
  $('collapse-'+key).onclick=()=>setSectionCollapsed(key,!collapsedSections[key]);
