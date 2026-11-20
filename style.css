@@ -50,6 +50,9 @@ body.settings-open #settings-drawer{transform:translateX(0);visibility:visible}
 .mapbar,.timelinehead,.eventhead{display:flex;align-items:center;gap:12px;min-height:56px;padding:10px 16px}
 .section-heading{display:inline-flex;align-items:center;gap:7px;flex-shrink:0;min-height:30px;padding:0;border:0;border-radius:0;background:none;color:var(--deep);font-size:var(--heading-font);font-weight:600;line-height:1.5;text-align:left;white-space:nowrap}.section-heading:hover{background:none;color:var(--accent)}
 .section-chevron{width:12px;font-size:12px;color:var(--accent)}
+.section-heading[aria-expanded=false] .section-chevron{transform:rotate(-90deg)}
+:is(.app-toolbar button,.eventsearchbar button,.meta-refresh,.annual-nav,#events-back-top){display:inline-flex;align-items:center;justify-content:center;gap:4px}
+#brushselection .entity-icon{width:11px;height:14px}
 #timeline-body,#eventlist-body{padding:0 16px 14px}
 
 .periodtools{display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0}.periodtools select{width:66px}
@@ -121,6 +124,16 @@ dialog{width:520px;max-width:94vw;max-height:92vh;overflow:auto;padding:22px;bor
 .timeline-day-stats dd{grid-row:1;width:100%;min-width:0;margin:0;color:var(--deep);text-align:center;font-size:17px;font-weight:650;font-variant-numeric:tabular-nums}
 .timeline-day-number{display:inline-block;white-space:nowrap}
 .timeline-day-hit{color:var(--highlight)}
+.day-frequency{grid-column:1/-1;min-width:0;margin-top:2px;padding-top:8px;border-top:1px solid var(--line)}
+.day-frequency header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px}
+.day-frequency h3{margin:0;font-size:14px}
+#day-frequency-bars{display:grid;grid-template-columns:repeat(var(--frequency-columns,1),minmax(0,1fr));gap:2px;margin-top:6px}
+.frequency-bar{display:grid;grid-template-rows:68px 1em;justify-items:center;align-items:end;gap:2px;min-width:0;min-height:0;padding:0;border:0;font-size:10px;line-height:1}
+.frequency-track{position:relative;width:78%;max-width:28px;height:100%}
+.frequency-track i{position:absolute;inset:auto 0 0;height:var(--frequency-total);background:var(--mid);border-radius:2px 2px 0 0}
+.frequency-track .frequency-hit{height:var(--frequency-hit);background:var(--highlight)}
+.frequency-short{display:none}
+#day-frequency-detail{display:block;min-height:1.5em;margin-top:3px;color:var(--muted);font-size:11px}
 @container timeline-body (min-width:610px){
  .timeline-day{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:16px}
 }
@@ -128,10 +141,10 @@ dialog{width:520px;max-width:94vw;max-height:92vh;overflow:auto;padding:22px;bor
  .timeline-day-dates{grid-template-columns:minmax(0,1fr)}
  .timeline-day-arrow{display:none}
 }
-.barcount,.bar-match-count{position:absolute;left:50%;z-index:2;font-size:11px;line-height:12px;font-variant-numeric:tabular-nums;white-space:nowrap;transform:translateX(-50%) scaleX(min(1,calc(var(--count-column,40) / (var(--count-digits) * var(--count-character,6.4) + var(--count-padding,0)))))}
+.barcount,.bar-match-count{position:absolute;left:50%;z-index:2;font-size:11px;line-height:12px;font-variant-numeric:tabular-nums;white-space:nowrap;transform:translateX(-50%) scaleX(min(1,calc(var(--count-column,40) / var(--count-digits) / var(--count-character,6.4))))}
 .barcount{bottom:calc(100% + 3px)}
-.bar-match-count{bottom:calc(var(--matched-height) + 2px);color:#fff;background:var(--deep);border-radius:2px;padding-inline:1px;--count-padding:2;font-weight:650}
-.bar-stack.inside .bar-match-count{bottom:calc(var(--matched-height) - 13px);color:var(--bar-match-ink,#000);background:none;padding:0;--count-padding:0}
+.bar-match-count{bottom:calc(var(--matched-height) + 2px);color:#fff;text-shadow:-1px 0 var(--deep),1px 0 var(--deep),0 -1px var(--deep),0 1px var(--deep);font-weight:650}
+.bar-stack.inside .bar-match-count{bottom:calc(var(--matched-height) - 13px);color:var(--bar-match-ink,#000);text-shadow:none}
 .bar-stack.raised-total .barcount{bottom:calc(100% + 15px)}
 .timeline-scroll{overflow:visible;padding:0 3px 8px}#timeline-track{position:relative;width:100%;min-width:0!important}#yearbars{display:flex;align-items:end;gap:4px;height:138px}.yearbar{display:flex;flex-direction:column;justify-content:end;align-items:center;gap:7px;flex:1 1 0;width:0;min-width:0;height:132px;min-height:0;padding:0 1px;border:0;background:none!important;font-size:11px;color:var(--muted)}.yearbar.selected{color:var(--accent)}
 .yearbar .bar-stack{display:block;position:relative;flex-shrink:0;width:86%}.yearbar .bar-stack i{position:absolute;bottom:0;left:0;display:block;width:100%;border-radius:2px 2px 0 0}.yearbar .bar-original{height:100%;background:var(--mid);opacity:.38}.yearbar.selected .bar-original{background:var(--accent);opacity:.9}.yearbar .bar-matched{height:var(--matched-height);background:var(--highlight)!important;opacity:1;z-index:1}
@@ -198,13 +211,16 @@ dialog{width:520px;max-width:94vw;max-height:92vh;overflow:auto;padding:22px;bor
 .annual-summary-content{height:var(--annual-summary-height);margin-top:auto}
 .annual-top-list{display:grid;grid-template-rows:repeat(5,minmax(0,1fr))}
 .annual-top-list .empty{grid-row:1/-1;min-height:0;padding:0}
-.annual-row{align-items:center}
+.annual-row{display:grid;grid-template-columns:minmax(0,1fr) max-content;min-width:0;align-items:center;overflow:hidden}
+.annual-name{min-width:0}
 .annual-range-dates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:6px 0}
 .annual-range-dates[hidden]{display:none}
 .annual-range-dates label{display:grid;gap:3px;font-size:12px;color:var(--muted)}
 .annual-range-dates input{width:100%;min-width:0}
 .annual-stats.annual-stats-range{grid-template-columns:repeat(4,minmax(0,1fr))}
 .annual-map-frame{position:relative}
+.annual-card.atlas-dialog{overflow-x:hidden}
+.annual-shanghai-tooltip{position:absolute;z-index:2;max-width:min(230px,calc(100% - 12px));padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--deep);box-shadow:0 2px 8px #0002;font-size:12px;line-height:1.5;white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}
 .annual-map-toggle{position:absolute;left:7px;bottom:7px;display:flex;align-items:center;gap:4px;margin:0;padding:4px 7px;border:1px solid var(--line);border-radius:6px;background:#fffffff2;color:var(--muted);font-size:12px;line-height:1;white-space:nowrap}
 .annual-map-toggle-east{left:calc(50% + 10px)}
 .annual-shanghai-stacked .annual-map-toggle:not(.annual-map-toggle-east){bottom:calc(50% + 8px)}
@@ -217,7 +233,8 @@ dialog{width:520px;max-width:94vw;max-height:92vh;overflow:auto;padding:22px;bor
 .annual-expense b{position:relative;height:1.35em;min-width:0}
 .annual-expense button{display:block;width:100%;min-width:0;padding:0;border:0;border-radius:3px;background:transparent;color:inherit;font:inherit;line-height:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .annual-expense button:hover{text-decoration:underline dotted}
-.annual-expense input{box-sizing:border-box;position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0 2px;text-align:center;font:inherit;appearance:textfield}
+.annual-expense :is(button,input){height:100%;min-height:0;margin:0;line-height:inherit}
+.annual-expense input{box-sizing:border-box;position:absolute;inset:0;width:100%;padding:0 2px;text-align:center;font:inherit;line-height:inherit;color:inherit;appearance:textfield}
 .annual-expense [hidden]{display:none}
 .annual-expense input::-webkit-outer-spin-button,.annual-expense input::-webkit-inner-spin-button{appearance:none;margin:0}
 #map.shanghai-overview .region-label{color:var(--deep);font-size:13px}
@@ -299,7 +316,8 @@ body:has(.trip-dialog[open],.annual-card[open]){overflow:hidden}
 .event-weekday-narrow{display:none}
 .evententities{position:relative;display:grid;grid-template-columns:16px minmax(0,1fr);gap:4px;--entity-line:24px}
 .event-entity-icon{align-self:start;margin-top:4px}
-.entity-icon{flex:none;vertical-align:middle}
+.entity-icon{flex:none;vertical-align:middle;pointer-events:none}
+.filter-chip-dismiss{width:12px;height:12px}
 :is(#activefilters,.event-display-options) button{display:inline-flex;align-items:center;gap:4px}
 .event-entity-list{min-width:0;line-height:var(--entity-line)}
 .event-entity-list .entitylink{display:inline-block;margin-bottom:0;line-height:var(--entity-line);vertical-align:top}
@@ -309,6 +327,12 @@ body:has(.trip-dialog[open],.annual-card[open]){overflow:hidden}
 #events-back-top{position:fixed;z-index:800;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));width:38px;height:38px;padding:0;border-radius:50%;color:var(--deep);background:var(--soft);box-shadow:0 2px 8px #0002;font-size:20px}
 @media(max-width:650px){
  .timeline-day{gap:8px}
+ #day-frequency-bars{gap:1px}
+ .frequency-bar{font-size:clamp(7px,2.2vw,10px)}
+ .frequency-years .frequency-tick{display:none}
+ .frequency-years .frequency-short{display:inline}
+ .annual-summary{grid-template-columns:minmax(0,.88fr) minmax(0,1.12fr);gap:6px}
+ .annual-months{gap:0}
  .timeline-day-dates input{font-size:16px}
  .maptools select{min-width:0;padding-inline:5px;font-size:12px}
  #level,#reset{flex:none}
