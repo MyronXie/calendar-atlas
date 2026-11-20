@@ -6,11 +6,15 @@ export function barHeights(total,matched,peak,plotHeight=82){const height=total?
 export function timelineCountLayout(total,dated,hit){
  const line=12,gap=2;
  const labels={total:{bottom:total+3}};
- const place=(height,allowNudge)=>{
+ const place=(height,allowNudge,allowRaise=false)=>{
   if(!height)return null;
   const above=height+2,inside=height-line-1;
   const fits=bottom=>Object.values(labels).every(label=>Math.abs(label.bottom-bottom)>=line+gap);
   if(fits(above))return {bottom:above};
+  if(allowRaise){
+   const ceiling=Math.min(above+12,labels.total.bottom-line-gap);
+   for(let bottom=above+1;bottom<=ceiling;bottom++)if(fits(bottom))return {bottom};
+  }
   if(inside>=1&&fits(inside))return {bottom:inside,inside:true};
   if(allowNudge&&labels.total.bottom-above<line+gap){
    labels.total.bottom=Math.min(labels.total.bottom+12,above+line+gap);
@@ -20,7 +24,7 @@ export function timelineCountLayout(total,dated,hit){
  };
  if(hit)labels.hit=place(hit,true);
  if(dated){
-  const scoped=place(dated,!hit);
+  const scoped=place(dated,!hit,true);
   if(scoped)labels.dated=scoped;
  }
  return labels;

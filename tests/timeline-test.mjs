@@ -7,6 +7,7 @@ assert.deepEqual(periodRange(2025*12+1,2024*12+11,true),['2024-12-01','2025-02-2
 const large=timelineCountLayout(82,53,14);
 assert.deepEqual(large,{total:{bottom:85},hit:{bottom:16},dated:{bottom:55}});
 assert.deepEqual(timelineCountLayout(82,0,80).hit,{bottom:67,inside:true});
+assert.deepEqual(timelineCountLayout(90,40,35).dated,{bottom:51});
 const tight=timelineCountLayout(7,7,7);
 assert.ok(!tight.dated);
 assert.ok(tight.total.bottom-tight.hit.bottom>=12);
