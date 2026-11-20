@@ -31,3 +31,8 @@ assert.ok(!matchesFilters(dated,[year,week,months[0]]));
 assert.ok(!matchesFilters(dated,[week,criterion('time','5',{scope:'date'})]));
 assert.equal(criterionDisplay(year).icon,'event');
 assert.equal(criterionDisplay(searchCriterion('all','周末',[])).icon,'search');
+
+const noon=criterion('time','12',{scope:'hour'});
+assert.ok(matchesFilters(dated,[noon,year]));
+assert.ok(!matchesFilters({...dated,allDay:true},[noon]));
+assert.ok(!matchesFilters(dated,[criterion('time','11',{scope:'hour'})]));

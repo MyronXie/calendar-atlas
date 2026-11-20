@@ -42,7 +42,7 @@ export function matchesFilters(event,list,placeType){
  }
  const dates=list.filter(c=>c.kind==='time');
  for(const unit of new Set(dates.map(c=>c.scope))){
-  if(!dates.some(c=>c.scope===unit&&matchesCriterionDate(c,event.start)))return false;
+  if(!dates.some(c=>c.scope===unit&&matchesCriterionDate(c,event.start,event.allDay)))return false;
  }
  return list.every(c=>{
   if(c.kind==='event'||c.kind==='group'||c.kind==='time')return true;
@@ -54,8 +54,8 @@ export function matchesFilters(event,list,placeType){
    .some(([kind,value])=>matchesCriterionText(c,kind,value));
  });
 }
-export function matchesCriterionDate(criterion,date){
- return criterion.kind==='time'&&dateBucket(date,criterion.scope)===Number(criterion.value);
+export function matchesCriterionDate(criterion,date,allDay=false){
+ return criterion.kind==='time'&&!(criterion.scope==='hour'&&allDay)&&dateBucket(date,criterion.scope)===Number(criterion.value);
 }
 export function criterionDisplay(c){
  const [label,icon]=({
