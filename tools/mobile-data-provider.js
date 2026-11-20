@@ -105,7 +105,7 @@ function showImport(files={}){
  dialog.id='atlas-import-card';
  dialog.setAttribute('aria-labelledby','atlas-import-title');
  dialog.innerHTML='<form><h2 id="atlas-import-title">导入数据</h2>'
-  +'<p>请选择 atlas-data 中缺少的文件。之后可在「设置 → 偏好」里逐项更新。</p>'
+  +'<p>请选择 atlas-data 中缺少的文件。之后可在「设置」中按文件逐项更新。</p>'
   +missing.map(({name,label,accept})=>'<label>'+label+' '+name+'<input name="'+name+'" type="file" accept="'+accept+'" required></label>').join('')
   +'<p id="imp-msg" role="status"></p><div class="quick"><button id="imp-close" type="button">稍后</button>'
   +'<button id="imp-go" class="primary" type="submit">导入并进入</button></div></form>';

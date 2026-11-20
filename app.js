@@ -1,6 +1,6 @@
 import {annualLegend,cityKey,drawAnnualImage,drawAnnualMap,drawShanghaiMap,layoutMapLabels,mapAttribution,shanghaiDistricts,shanghaiMapPlaces,shanghaiMetroLayers,shanghaiName} from './annual-review.js';
 import {basemaps} from './basemaps.js';
-import {periodCounts,addMatches,barHeights,timelineCountLayout,frequencyBuckets,periodRange,dateBucket,dateBucketLabel,dateConditionGroups,dateBucketGroups} from './timeline.js';
+import {periodCounts,addMatches,barHeights,timelineCountLayout,monthlyColumns,frequencyBuckets,periodRange,dateBucket,dateBucketLabel,dateConditionGroups,dateBucketGroups} from './timeline.js';
 import {palettes,resolveTheme,coordinateLabel,highlightLabelColor} from './appearance.js';
 import {criterion,toggleCriterion,matchesFilters,matchesCriterionText,matchesCriterionDate,searchCriterion,criterionDisplay,eventParts,eventCriteria,rankSections,toggleRankHidden} from './filters.js';
 import {selectEmoji} from './emoji.js';
@@ -13,9 +13,9 @@ const sourceTimeIds = {calendar:'cal-version', places:'place-version', blacklist
 const mobileSource=document.documentElement?.dataset?.mobileSource;
 const mobileImport=mobileSource==='import';
 const importTypes={
- calendar:{label:'日历',accept:'.ics,text/calendar',route:'calendar'},
- places:{label:'地点',accept:'.csv,text/csv',route:'places'},
- blacklist:{label:'配置',accept:'.json,application/json',route:'config'},
+ calendar:{accept:'.ics,text/calendar',route:'calendar'},
+ places:{accept:'.csv,text/csv',route:'places'},
+ blacklist:{accept:'.json,application/json',route:'config'},
 };
 const reviewMapOptions={focusVisitedCities:false,includeSouthChinaSea:true,includeChongming:true,innerRing:false};
 const shanghaiLayerOptions={boundaries:true,roads:true,metro:false,landmarks:false};
@@ -80,7 +80,7 @@ function refresh({timeline=true,fitBeforeDraw=false}={}){
  const [start,end]=selectedRange;
  const from=new Date(start+'T00:00:00'),to=new Date(end+'T23:59:59.999');
  const rangeLabel=start.replaceAll('-','/')+'-'+end.replaceAll('-','/');
- $('timeline-range-label').textContent=' · '+rangeLabel;
+ $('timeline-range-label').textContent=rangeLabel;
  const result=rangeEvents(from,to);
  const draft=$('search').value.trim();
  draftCriterion=draft?searchCriterion($('searchscope').value||'all',draft,result.events):null;
@@ -172,6 +172,7 @@ function renderTimeStats(events,scoped,matched,from,to){
  const stats=$('timeline-stats');
  const weights=[];
  const separator='<span aria-hidden="true"> / </span>';
+ const distribution=[matches?'筛选命中':null,dates?'日期条件':null,'范围总数'].filter(Boolean).join(' / ');
  stats.innerHTML=totals.map(([label,total],i)=>{
   const hit=matches?.[i][1],dated=dates?.[i][1];
   const count=(matches?'<strong class="timeline-stat-hit">'+hit+'</strong>'+separator:'')
@@ -179,7 +180,7 @@ function renderTimeStats(events,scoped,matched,from,to){
   const description=matches||dates?' aria-label="'+(matches?'命中 '+hit+'，':'')+(dates?'日期条件 '+dated+'，':'')+'共 '+total+'"':'';
   const digits=[total,hit,dated].filter(n=>n!==undefined).map(String).join('/').length;
   weights.push('minmax(0,'+Math.max(5,digits)+'fr)');
-  return '<div><dt>'+label+'</dt><dd'+description+'>'
+  return '<div title="'+distribution+'"><dt>'+label+'：</dt><dd'+description+'>'
    +'<span class="timeline-stat-number">'+count+'</span></dd></div>';
  }).join('');
  stats.style.setProperty('--timeline-stat-columns',weights.join(' '));
@@ -754,7 +755,7 @@ function renderBlacklist(){const all=rules.blacklist||[],type=$('blacklist-type'
 async function persistBlacklist(rows,version=configVersion){if(blacklistBusy)return false;blacklistBusy=true;$('blacklist-error').textContent='';renderBlacklist();try{const response=await fetch('api/config',{method:'POST',headers:{'Content-Type':'application/json','X-Atlas-Write':'1'},body:JSON.stringify({version,blacklist:rows})});const d=await response.json();if(!response.ok)throw Error(d.error||'黑名单保存失败');rules=d;emojiConfig=d.emojis;configVersion=d.version;timelineKey='';refresh();updateDataTimes(['blacklist']);return true;}catch(e){$('blacklist-error').textContent=e.message;return false;}finally{blacklistBusy=false;renderBlacklist();}}
 function editBlacklist(index=-1){blacklistEditing=index;blacklistEditVersion=configVersion;const r=rules.blacklist?.[index]||{type:$('blacklist-type').value==='place'?'place':'event',enabled:'1',match_type:'contains',value:'',reason:''};const f=$('blacklist-form');for(const k of ['type','match_type','value','reason'])f.elements[k].value=r[k]||'';f.elements.enabled.checked=r.enabled!=='0';$('blacklist-editor-title').textContent=index<0?'新增规则':'编辑规则';$('blacklist-form-error').textContent='';$('blacklist-editor').showModal();}
 $('blacklist-form').onsubmit=async e=>{e.preventDefault();const f=e.target;const r={type:f.elements.type.value,enabled:f.elements.enabled.checked?'1':'0',match_type:f.elements.match_type.value,value:f.elements.value.value,reason:f.elements.reason.value};if(r.type==='place'&&r.match_type==='uid'){$('blacklist-form-error').textContent='UID 仅适用于事件';return;}$('save-blacklist').disabled=true;try{const rows=structuredClone(rules.blacklist||[]);if(blacklistEditing<0)rows.push(r);else rows[blacklistEditing]=r;if(await persistBlacklist(rows,blacklistEditVersion))$('blacklist-editor').close();else $('blacklist-form-error').textContent=$('blacklist-error').textContent;}finally{$('save-blacklist').disabled=false;}};
-$('cancel-blacklist').onclick=()=>$('blacklist-editor').close();$('add-blacklist').onclick=()=>editBlacklist();$('blacklist-type').onchange=$('blacklist-search').oninput=renderBlacklist;$('reload-blacklist').onclick=async()=>{try{await reloadSource('blacklist');$('blacklist-error').textContent='';}catch(e){$('blacklist-error').textContent=e.message;}};
+$('cancel-blacklist').onclick=()=>$('blacklist-editor').close();$('add-blacklist').onclick=()=>editBlacklist();$('blacklist-type').onchange=$('blacklist-search').oninput=renderBlacklist;
 $('datum').onchange=()=>{localStorage.setItem('atlas-datum-v2',$('datum').value);cache.clear();refresh();};
 function setupYears(){
  const years=source.map(e=>e.startDate?.toJSDate().getFullYear()).filter(Number.isFinite);
@@ -853,7 +854,7 @@ function timelineBar({total,inRange,scoped,matched,peak,label,shortLabel}){
 const periodIndex=(date,monthly)=>Number(date.slice(0,4))*(monthly?12:1)+(monthly?Number(date.slice(5,7))-1:0);
 const monthLabel=index=>Math.floor(index/12)+'-'+String(index%12+1).padStart(2,'0');
 const overviewBars=$('yearbars');
-let overviewChartData,overviewBounds;
+let overviewChartData,overviewBounds,overviewMonths;
 function renderOverviewChart(){
  if(focusView()||!overviewChartData)return;
  ensureTimeline();
@@ -876,7 +877,7 @@ function renderOverviewChart(){
   const selected=index>=a&&index<=b;
   const dates=hasDates?scoped:null;
   const description=barDescription(date,total,hit,dates);
-  return '<button type="button" class="yearbar '+(selected?'selected ':'')+(monthly&&index%12===0?'year-start':'')
+  return '<button type="button" class="yearbar '+(selected?'selected ':'')+(monthly&&index>min&&index%12===0?'year-start':'')
    +'" data-period="'+index+'" data-total="'+total+'" data-matched="'+(hit??0)+'" aria-pressed="'+selected+'" title="'+description+'" aria-label="'+description+'">'
    +timelineBar({total,inRange,scoped:dates,matched:hit,peak,label:monthly?'':date,shortLabel:'&#39;'+date.slice(-2)})+'</button>';
  }).join('');
@@ -902,20 +903,25 @@ function fitOverviewChart(){
  const [min,max]=overviewBounds,count=max-min+1;
  fitTimelineColumns($('timeline-track'),width,count,monthly);
  if(!monthly)return;
- const labels=[];
- const unit=width/count;
- $('timeline-track').classList.toggle('readable-counts',unit>=18);
- for(let start=min;start<=max;){
-  const year=Math.floor(start/12),end=Math.min(max+1,(year+1)*12);
-  const center=(start+end-2*min)*unit/2;
-  const full=(end-start)*unit>=32;
-  const half=full?15:9;
-  if(center-half>=0&&center+half<=width&&(!labels.length||center-half>=labels.at(-1).right+4)){
-   labels.push({center,right:center+half,year,label:full?year:'’'+String(year).slice(-2)});
-  }
-  start=end;
+ const track=$('timeline-track');
+ overviewMonths=monthlyColumns(width,min,max);
+ const {columnWidth,yearGap,groups}=overviewMonths;
+ track.style.setProperty('--month-width',columnWidth+'px');
+ track.style.setProperty('--count-column',String(columnWidth));
+ track.style.setProperty('--month-year-gap',yearGap+'px');
+ track.classList.toggle('readable-counts',columnWidth>=18);
+ const [a,b]=selectedRange.map(date=>periodIndex(date,true));
+ const labels=groups.map(({year,start,end,left,width:span})=>{
+  const center=left+span/2,full=span>=39,half=full?17:11;
+  return {year,center,left:center-half,right:center+half,selected:a<end&&b>=start,label:full?year:'’'+String(year).slice(-2)};
+ });
+ const shown=[];
+ for(const label of [...labels.filter(item=>item.selected),...labels.filter(item=>!item.selected)]){
+  if(label.left<0||label.right>width||shown.some(other=>label.left<other.right+3&&label.right+3>other.left))continue;
+  shown.push(label);
  }
- $('timeline-month-axis').innerHTML=labels.map(({center,year,label})=>'<span data-axis-year="'+year+'" style="left:'+center+'px">'+label+'</span>').join('');
+ $('timeline-month-axis').innerHTML=shown.sort((a,b)=>a.year-b.year).map(({center,year,label,selected})=>
+  '<span data-axis-year="'+year+'"'+(selected?' class="selected-year"':'')+' style="left:'+center+'px">'+label+'</span>').join('');
 }
 if(typeof ResizeObserver==='function')new ResizeObserver(fitOverviewChart).observe(overviewBars);
 function setTimeRange(start,end){
@@ -1102,6 +1108,11 @@ function periodAt(x){
  const [min,max]=overviewBounds;
  const hit=document.elementFromPoint(x,rect.top+rect.height/2)?.closest('[data-period]');
  if(hit&&overviewBars.contains(hit))return Number(hit.dataset.period);
+ if(overviewUnit==='month'&&overviewMonths){
+  const offset=x-rect.left,{groups,columnWidth,yearGap}=overviewMonths;
+  const group=groups.find(item=>offset<item.left+item.width+yearGap/2)||groups.at(-1);
+  return Math.max(group.start,Math.min(group.end-1,group.start+Math.floor((offset-group.left)/columnWidth)));
+ }
  return Math.max(min,Math.min(max,min+Math.floor((x-rect.left)/rect.width*(max-min+1))));
 }
 function previewPeriods(first,last){
@@ -1359,8 +1370,8 @@ narrowDrawers?.addEventListener?.('change',event=>{
  if(event.matches&&rankDrawerOpen&&settingsOpen)drawer(false,false);
 });
 function renderPlaces(){if(!$('place-list-details').open)return;const q=$('placesearch').value.toLowerCase(),state=$('placestate').value||'all';const pendingAllowed=state==='pending'?new Set(applyRules(source.map(e=>({...details(e),uid:e.uid,start:e.startDate?.toJSDate()||new Date(0)})),rules,true).events.flatMap(e=>e.places).map(n=>normalizePlace(baseCoords.get(normalizePlace(n))?.location||n))):null;const names=[...new Set([...reference.places.map(p=>p.location),...source.flatMap(e=>details(e).places).map(n=>baseCoords.get(normalizePlace(n))?.location||n)])].sort((a,b)=>a.localeCompare(b,'zh-CN'));const lookupCSV=baseCoords;const rows=names.map(name=>{const row=lookupCSV.get(normalizePlace(name)),p=pos(name),disabled=isClosed(row?.valid);return {name,row,p,disabled};}).filter(({name,row,p,disabled})=>(!q||[name,row?.address,row?.type,placeTypes[row?.type],row?.labels,row?.aliases].join(' ').toLowerCase().includes(q))&&(state==='all'?!isPlaceExcluded(row||{location:name},rules):(state==='closed'?disabled:state==='pending'?!p&&pendingAllowed.has(normalizePlace(name))&&!isPlaceExcluded(row||{location:name},rules):state==='exact'?p?.precision==='exact':p&&p.precision!=='exact')));$('placelist').innerHTML=rows.slice(0,placeLimit).map(({name,row,p,disabled})=>(mobileSource?'<div class="placeitem"':'<button class="placeitem" data-edit="'+E(name)+'"')+' title="'+E(row?.address||name)+'">'+(row?.type?'<span class="place-type type-icon" title="'+E((placeTypes[row.type]||row.type))+'" aria-label="'+E(placeTypes[row.type]||row.type)+'">'+E(emojiConfig.typeEmojis?.[row.type]||'📍')+'</span>':'')+'<b>'+E(name)+'</b>'+(disabled?'<span class="closed-badge" title="已停业" aria-label="已停业">'+entityIcon('lock')+'</span>':'')+'<span class="place-coordinates">'+E(coordinateLabel(validCoord(row)?row:p?.precision==='exact'?p:null))+'</span>'+(mobileSource?'</div>':'</button>')).join('')||'<div class="empty">无匹配地点</div>';$('placelist').querySelectorAll('[data-edit]').forEach(el=>el.onclick=()=>edit(el.dataset.edit));$('placemore').hidden=rows.length<=placeLimit;}
-$('placesearch').oninput=$('placestate').onchange=()=>{placeLimit=100;renderPlaces();};$('placemore').onclick=()=>{placeLimit+=100;renderPlaces();};$('addplace').onclick=()=>edit();$('reloadplaces').onclick=async()=>{try{await reloadSource('places');}catch(e){$('status').textContent=e.message;}};
-setInterval(async()=>{if(document.documentElement?.dataset?.mobile==='1'||$('editor').open||$('blacklist-editor').open||blacklistBusy||document.hidden)return;try{const r=await fetch('api/places');if(!r.ok)return;const d=await r.json();let configChanged=false;const cr=await fetch('api/config');if(cr.ok){const c=await cr.json();if(c.version!==configVersion){rules=c;emojiConfig=c.emojis;configVersion=c.version;timelineKey='';configChanged=true;renderBlacklist();}}if(d.version!==csvVersion||configChanged){csvVersion=d.version;reference.places=d.places;setupReference();cache.clear();refresh();}}catch{}},15000);
+$('placesearch').oninput=$('placestate').onchange=()=>{placeLimit=100;renderPlaces();};$('placemore').onclick=()=>{placeLimit+=100;renderPlaces();};$('addplace').onclick=()=>edit();
+setInterval(async()=>{if(document.documentElement?.dataset?.mobile==='1'||$('editor').open||$('blacklist-editor').open||blacklistBusy||document.hidden)return;try{const r=await fetch('api/places');if(!r.ok)return;const d=await r.json();let configChanged=false;const cr=await fetch('api/config');if(cr.ok){const c=await cr.json();if(c.version!==configVersion){rules=c;emojiConfig=c.emojis;configVersion=c.version;timelineKey='';configChanged=true;renderBlacklist();}}if(d.version!==csvVersion||configChanged){const changed=[...(d.version!==csvVersion?['places']:[]),...(configChanged?['blacklist']:[])];csvVersion=d.version;reference.places=d.places;setupReference();cache.clear();refresh();void updateDataTimes(changed);}}catch{}},15000);
 
 
 
@@ -1454,7 +1465,15 @@ document.addEventListener?.('keydown',e=>{
 
 function showDataTime(key,value){
  const date = value ? new Date(value) : null;
- $(sourceTimeIds[key]).textContent = date && !isNaN(date) ? date.toLocaleString('zh-CN',{hour12:false}) : '—';
+ const target=$(sourceTimeIds[key]);
+ if(!date||isNaN(date)){
+  target.textContent='—';
+  target.removeAttribute?.('datetime');
+  return;
+ }
+ const clock=[date.getHours(),date.getMinutes()].map(n=>String(n).padStart(2,'0')).join(':');
+ target.textContent=dateInputValue(date).replaceAll('-','/')+' '+clock;
+ target.setAttribute('datetime',date.toISOString());
 }
 async function updateDataTimes(keys=Object.keys(sourceTimeIds)){
  try{
@@ -1482,53 +1501,56 @@ async function reloadSource(key){
  }
  if(key==='blacklist'){
   await readConfigFiles();
+  $('blacklist-error').textContent='';
   renderBlacklist();
   timelineKey='';
   refresh();
  }
  await updateDataTimes([key]);
 }
-document.querySelectorAll('[data-meta]').forEach(button=>{
- const key=button.dataset.meta;
- const {label:sourceLabel,accept,route}=importTypes[key];
- const label=mobileImport?'更新'+sourceLabel:button.getAttribute('aria-label');
- async function update(file){
-  const status=$('meta-status');
-  button.disabled=true;
-  status.textContent=label+'中…';
-  try{
-   if(file){
-    const result=await fetch('api/'+route,{method:'PUT',body:await file.text()});
-    if(!result.ok)throw Error((await result.json()).error||'文件保存失败');
-   }
-   await reloadSource(key);
-   status.textContent=label+'成功';
-  }catch(error){
-   status.textContent=label+'失败：'+error.message;
-  }finally{
-   button.disabled=false;
+const sourceStatusIds={calendar:'meta-status',places:'place-reload-status',blacklist:'config-reload-status'};
+const busySources=new Set();
+async function updateSource(key,button,file){
+ if(busySources.has(key))return;
+ const status=$(sourceStatusIds[key]);
+ const label=button.getAttribute('aria-label');
+ const {route}=importTypes[key];
+ const controls=document.querySelectorAll('[data-meta="'+key+'"],[data-upload-source="'+key+'"]');
+ busySources.add(key);
+ for(const control of controls)control.disabled=true;
+ status.textContent=label+'中…';
+ try{
+  if(file){
+   const result=await fetch('api/'+route,{method:'PUT',body:await file.text()});
+   if(!result.ok)throw Error((await result.json()).error||'文件保存失败');
   }
+  await reloadSource(key);
+  status.textContent=label+'成功';
+ }catch(error){
+  status.textContent=label+'失败：'+error.message;
+ }finally{
+  busySources.delete(key);
+  for(const control of controls)control.disabled=false;
  }
- if(!mobileImport){
-  button.onclick=()=>update();
-  return;
- }
+}
+for(const button of document.querySelectorAll('[data-meta]')){
+ button.onclick=()=>updateSource(button.dataset.meta,button);
+}
+if(mobileImport)for(const button of document.querySelectorAll('[data-upload-source]')){
+ const key=button.dataset.uploadSource;
  const input=document.createElement('input');
  input.type='file';
- input.accept=accept;
+ input.accept=importTypes[key].accept;
  input.hidden=true;
- input.dataset.upload=key;
  input.onchange=()=>{
   const file=input.files[0];
   input.value='';
-  if(file)void update(file);
+  if(file)void updateSource(key,button,file);
  };
  button.after(input);
- button.innerHTML=entityIcon('add');
- button.title=label;
- button.setAttribute('aria-label',label);
  button.onclick=()=>input.click();
-});
+}
+
 
 async function loadCityBoundaries(){
  if(cityBoundaries)return;
