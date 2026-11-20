@@ -35,10 +35,11 @@ export function frequencyBuckets(events,scoped,matched,unit,from,to){
  return [...rows.values()];
 }
 
+const valuesInRanges=ranges=>ranges.flatMap(([start,end])=>Array.from({length:end-start},(_,i)=>start+i));
 export const hourGroups=[
  {label:'清晨',ranges:[[5,8]]},{label:'上午',ranges:[[8,12]]},{label:'中午',ranges:[[12,14]]},
  {label:'下午',ranges:[[14,18]]},{label:'晚上',ranges:[[18,22]]},{label:'深夜',ranges:[[0,5],[22,24]]},
-].map(group=>({...group,hours:group.ranges.flatMap(([from,to])=>Array.from({length:to-from},(_,i)=>from+i))}));
+].map(group=>({...group,hours:valuesInRanges(group.ranges)}));
 
 const dateUnits=['year','month','weekday','date','hour'];
 const namedRuns={
@@ -47,6 +48,19 @@ const namedRuns={
  weekday:[[0,4,'工作日'],[5,6,'双休日']],
  date:[[1,10,'上旬'],[11,20,'中旬'],[21,31,'下旬']],
 };
+const quarterRuns=namedRuns.month.slice(0,4);
+const bucketGroups={
+ hour:hourGroups.map(({label,ranges,hours})=>({label,ranges,values:hours})),
+ ...Object.fromEntries(Object.entries({month:quarterRuns,weekday:namedRuns.weekday,date:namedRuns.date}).map(([unit,runs])=>[unit,
+  runs.map(([start,end,label])=>{
+   const ranges=[[start,end+1]];
+   return {label,ranges,values:valuesInRanges(ranges)};
+  }),
+ ])),
+};
+export function dateBucketGroups(unit){
+ return bucketGroups[unit]||[];
+}
 function dateRuns(values){
  const runs=[];
  for(const value of [...new Set(values)].sort((a,b)=>a-b)){

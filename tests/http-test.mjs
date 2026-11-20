@@ -65,11 +65,11 @@ try{
  assert.equal(await fs.readFile(path.join(backupDir,calendarBackup),'utf8'),text);
  let appVersion='未标记';
  try {
-  const [commit,short,date]=execFileSync('git',['show','-s','--abbrev=7','--format=%H%n%h%n%cs','HEAD'],{
+  const [commit,short,date]=execFileSync('git',['show','-s','--abbrev=7','--format=%H%n%h%n%ci','HEAD'],{
    cwd:new URL('../',import.meta.url),encoding:'utf8',stdio:['ignore','pipe','ignore'],
   }).trim().split(/\r?\n/);
   appVersion='<a href="https://github.com/MyronXie/calendar-atlas/commit/'+commit
-   +'" target="_blank" rel="noopener noreferrer">'+short+'</a> ('+date.replaceAll('-','/')+')';
+   +'" target="_blank" rel="noopener noreferrer">'+short+'</a> ('+date.slice(0,16).replaceAll('-','/')+')';
  }catch{}
  for(const route of ['/','/index.html','/app.js','/basemaps.js','/core.js','/organize.js','/vendor/leaflet.js','/style.css','/api/calendar']){
   const response=await request(route);

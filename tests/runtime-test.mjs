@@ -37,10 +37,10 @@ function editTimeRange(start,end){
  el('to').value=end;
  el('timeline-range-form').onsubmit({preventDefault(){}});
 }
-assert.ok(!els.get('status').textContent,'Application must load');assert.ok(icons.some(h=>h.includes('single-emoji')));assert.ok(!icons.some(h=>h.includes('>1</span>')));assert.ok(els.get('events').innerHTML.includes('<article class="event">'));assert.ok(!els.get('events').innerHTML.includes('<summary>'));const ev=els.get('events');assert.ok(ev.querySelectorAll('[data-event-range]').length);const originalDates=getTimeRange();
+assert.ok(!els.get('status').textContent,'Application must load');assert.ok(el('map-body').hidden);assert.ok(el('map-tools').hidden);assert.match(el('map-title').textContent,/^地点 · \d+$/);assert.ok(el('timeline-range-indicator').hidden);el('collapse-map').onclick();assert.ok(icons.some(h=>h.includes('single-emoji')));assert.ok(!icons.some(h=>h.includes('>1</span>')));assert.ok(els.get('events').innerHTML.includes('<article class="event">'));assert.ok(!els.get('events').innerHTML.includes('<summary>'));const ev=els.get('events');assert.ok(ev.querySelectorAll('[data-event-range]').length);const originalDates=getTimeRange();
 ev.querySelectorAll('[data-event-range]')[0].onclick();
 assert.equal(el('timeline-mode-focus').attributes['aria-pressed'],'true');
-assert.match(rangeText(),/^·\d{4}\/\d{2}\/\d{2}-\d{4}\/\d{2}\/\d{2}$/);
+assert.match(rangeText(),/^ · \d{4}\/\d{2}\/\d{2}-\d{4}\/\d{2}\/\d{2}$/);
 el('timeline-mode-overview').onclick();
 editTimeRange(...originalDates);
 els.get('showplaces').onclick();assert.ok(ev.innerHTML.includes('class="evententities eventplaces" hidden'));els.get('showpeople').onclick();assert.ok(ev.innerHTML.includes('class="evententities eventpeople" hidden'));els.get('showplaces').onclick();els.get('showpeople').onclick();const place=ev.querySelectorAll('[data-filter-place]')[0];assert.ok(place);place.onclick();assert.ok(els.get('activefilters').innerHTML.includes('#icon-place'));els.get('unselect').onclick();const person=ev.querySelectorAll('[data-filter-person]')[0];assert.ok(person);person.onclick();assert.ok(els.get('activefilters').innerHTML.includes('#icon-person'));els.get('unselect').onclick();assert.ok(els.get('activefilters').innerHTML==='');mapClicks[0]();assert.ok(els.get('activefilters').innerHTML.includes('#icon-place'));els.get('unselect').onclick();const ranked=els.get('ranking').querySelectorAll('[data-rank-name]')[0];assert.ok(ranked);ranked.onclick();assert.ok(els.get('activefilters').innerHTML.includes('#icon-place'));const matching=ev.querySelectorAll('[data-filter-place]').find(x=>x.dataset.filterPlace===ranked.dataset.rankName);assert.ok(matching);matching.onclick();assert.ok(!els.get('activefilters').innerHTML.includes('#icon-place'));els.get('search').value='nonexistent-fixture-search-8251';els.get('search').oninput();assert.ok(els.get('activefilters').innerHTML.includes('data-remove-draft'));assert.ok(els.get('events').innerHTML.includes('无事件'));els.get('unselect').onclick();assert.equal(els.get('search').value,'');assert.ok(!els.get('events').innerHTML.includes('data-place='));const addEvent=els.get('events').querySelectorAll('[data-filter-event]')[0];assert.ok(addEvent);addEvent.onclick();assert.ok(els.get('activefilters').innerHTML.includes('#icon-event'));const person2=els.get('events').querySelectorAll('[data-filter-person]')[0];if(person2){person2.onclick();assert.ok(els.get('activefilters').innerHTML.includes('#icon-event'));assert.ok(els.get('activefilters').innerHTML.includes('#icon-person'));}const removeIndex=els.get('activefilters').innerHTML.includes('#icon-group')?'1':'0';const remove=els.get('activefilters').querySelectorAll('[data-remove-filter]').find(x=>x.dataset.removeFilter===removeIndex);remove.onclick();assert.ok(!els.get('activefilters').innerHTML.includes('#icon-event'));els.get('unselect').onclick();els.get('searchscope').value='event';els.get('search').value='fixture-search-999';els.get('searchform').onsubmit({preventDefault(){}});assert.ok(els.get('activefilters').innerHTML.includes('#icon-event'));assert.equal(els.get('search').value,'');els.get('unselect').onclick();assert.equal(document.getElementById('placelist').innerHTML,'');
@@ -65,29 +65,31 @@ const dragBetween=(a,b,cancel=false)=>{
  else overviewBars.onpointerup({clientX:toX,pointerId});
 };
 period(start).onclick();
-assert.equal(rangeText(),'·'+start+'/01/01-'+start+'/12/31');
+assert.equal(rangeText(),' · '+start+'/01/01-'+start+'/12/31');
+assert.ok(!el('timeline-range-indicator').hidden);
 dragBetween(end,start);
-assert.equal(rangeText(),'·'+start+'/01/01-'+end+'/12/31');
+assert.equal(rangeText(),' · '+start+'/01/01-'+end+'/12/31');
 dragBetween(start,end,true);
-assert.equal(rangeText(),'·'+start+'/01/01-'+end+'/12/31');
+assert.equal(rangeText(),' · '+start+'/01/01-'+end+'/12/31');
 el('timeline-overview-month').onclick();
 assert.ok(!overviewBars.innerHTML.includes('class="barcount"'));
 const month=overviewBars.querySelectorAll('[data-period]').find(bar=>+bar.dataset.period%12===1);
 assert.ok(month);
 month.onclick();
 const febYear=Math.floor(Number(month.dataset.period)/12);
-assert.equal(rangeText(),'·'+febYear+'/02/01-'+febYear+'/02/'+new Date(febYear,2,0).getDate());
+assert.equal(rangeText(),' · '+febYear+'/02/01-'+febYear+'/02/'+new Date(febYear,2,0).getDate());
 el('timeline-overview-year').onclick();
 const html=await fs.readFile(new URL('../index.html',import.meta.url),'utf8');
 assert.ok(!html.includes('生活的经纬'));
 assert.ok(!html.includes('YOUR PERSONAL'));
 assert.ok(html.includes('id="yearbars"'));
+assert.ok(html.indexOf('id="collapse-timeline"')<html.indexOf('id="collapse-map"'));
 assert.ok(!html.includes('id="brushselection"'));
 assert.ok(overviewBars.innerHTML.includes('data-period='));
 els.get('heatmap').checked=true;els.get('heatmap').onchange();assert.ok(!els.get('provider').disabled);els.get('heatmap').checked=false;els.get('level').value='domestic';els.get('level').onchange();domesticControl.listeners.change({target:domesticRadios[1]});els.get('level').value='country';els.get('level').onchange();assert.ok(els.get('provider').disabled);els.get('level').value='place';els.get('level').onchange();assert.ok(!els.get('provider').disabled);assert.ok(html.includes('data-settings-panel="manage"'));assert.ok(!html.includes('id="partner"'));assert.ok(!html.includes('id="region"'));assert.ok(!html.includes('data-panel="pending"'));assert.ok(html.indexOf('id="search"')>html.indexOf('<section class="events">'));assert.ok(html.indexOf('data-settings-panel="filters"')>html.indexOf('data-settings-panel="manage"'));assert.equal(document.getElementById('blacklist-rows').innerHTML,'');els.get('rule-list-details').open=true;els.get('rule-list-details').ontoggle();const rulesPanel=els.get('blacklist-rows');const beforeRules=rulesPanel.querySelectorAll('[data-rule-delete]').length;const toggle=rulesPanel.querySelectorAll('[data-rule-toggle]')[0];assert.ok(toggle);toggle.checked=false;await toggle.onchange();assert.ok(rulesPanel.innerHTML.includes('blacklist-row off'));await rulesPanel.querySelectorAll('[data-rule-delete]')[0].onclick();assert.equal(rulesPanel.querySelectorAll('[data-rule-delete]').length,beforeRules-1);const form=els.get('blacklist-form');for(const k of ['type','match_type','value','reason','enabled'])form.elements[k]=new Element();els.get('add-blacklist').onclick();form.elements.value.value='Synthetic blacklist rule';form.elements.enabled.checked=true;await form.onsubmit({preventDefault(){},target:form});assert.equal(rulesPanel.querySelectorAll('[data-rule-delete]').length,beforeRules);assert.ok(!html.includes('未核验'));assert.ok(!html.includes('id="eventrules"'));els.get('collapse-map').onclick();assert.equal(els.get('map-body').hidden,true);els.get('collapse-map').onclick();assert.equal(els.get('map-body').hidden,false);els.get('collapse-timeline').onclick();assert.equal(els.get('timeline-body').hidden,true);els.get('collapse-timeline').onclick();assert.equal(els.get('timeline-body').hidden,false);els.get('collapse-eventlist').onclick();assert.equal(els.get('eventlist-body').hidden,true);els.get('collapse-eventlist').onclick();assert.equal(els.get('eventlist-body').hidden,false);assert.equal(document.getElementById('theme-options').innerHTML,'');assert.ok(els.get('theme-current').innerHTML);els.get('theme-list-details').open=true;els.get('theme-list-details').ontoggle();const blue=els.get('theme-options').querySelectorAll('[data-theme-choice]').find(x=>x.dataset.themeChoice==='blue');assert.ok(blue);blue.onclick();assert.equal(document.body.attributes['data-theme'],'blue');assert.ok(!els.get('ranking').innerHTML.includes('已有坐标'));assert.ok(!els.get('placelist').innerHTML.includes('历史记录保留'));assert.ok(!html.includes('id="yearlabel"'));assert.ok(!html.includes('id="view-map"'));assert.ok(!html.includes('id="heat"'));assert.ok(html.includes('id="heatmap"'));assert.ok(html.indexOf('id="level"')<html.indexOf('id="provider"'));assert.ok(html.indexOf('id="provider"')<html.indexOf('id="reset"'));assert.ok(html.indexOf('id="showplaces"')<html.indexOf('id="eventlist-body"'));els.get('toggle-settings').onclick();assert.equal(els.get('settings-drawer').attributes['aria-hidden'],'false');assert.equal(els.get('settings-drawer').inert,false);els.get('toggle-settings').onclick();assert.equal(els.get('settings-drawer').attributes['aria-hidden'],'true');assert.equal(els.get('settings-drawer').inert,true);assert.ok(!html.includes('settings-backdrop'));assert.ok(!els.get('yearbars').innerHTML.includes('bar-matched'));els.get('search').value='fixture-test-nonexistent';els.get('search').oninput();assert.ok(els.get('yearbars').innerHTML.includes('bar-matched'));els.get('unselect').onclick();const values=[...els.get('yearbars').innerHTML.matchAll(/data-total="(\d+)" data-matched="(\d+)"/g)];assert.ok(values.length>0);assert.ok(values.every(m=>+m[2]<=+m[1]));console.log(JSON.stringify({rightSettingsDrawer:'passed',filteredTimeline:'passed',sectionDrawers:'passed',themeSwitch:'passed',compactLists:'passed',blacklistUI:'passed',appRuntime:'passed',yearRange:'passed',monthRange:'passed',leapYear:'passed',compactEvents:'passed',placeManagement:'passed',histogramDrag:'passed',adminLevels:'passed',timeOnlyNotes:'passed',entityFilters:'passed',columnVisibility:'passed',fittedMonthBars:'passed',sharedRankEntityFilters:'passed',keywordSummary:'passed',drawerLayout:'passed',mapCriteria:'passed',multipleCriteria:'passed',searchScopes:'passed'}));
 
 // Verify actual rank buttons in each tab without changing active criteria or frequencies.
-el('timeline-all').onclick();els.get('unselect').onclick();
+el('timeline-all').onclick();assert.ok(el('timeline-range-indicator').hidden);els.get('unselect').onclick();
 for(const tab of rankTabs){
  tab.onclick();const pane=els.get('ranking'),before=pane.querySelectorAll('[data-rank-name]').map(e=>e.dataset.rankName);assert(before.length>0);const name=before[0],original=pane.innerHTML;
  const criteria=els.get('activefilters').innerHTML;
@@ -151,7 +153,7 @@ const previousDates=getTimeRange();
 el('timeline-mode-focus').onclick();
 editTimeRange('2025-12-31','2026-01-01');
 assert.ok(el('timeline-chart').hidden);
-assert.equal(rangeText(),'·2025/12/31-2026/01/01');
+assert.equal(rangeText(),' · 2025/12/31-2026/01/01');
 assert.match(el('timeline-stats').innerHTML,/<dt>事件<\/dt><dd><span class="timeline-stat-number">2</);
 assert.match(el('timeline-stats').innerHTML,/<dt>天数<\/dt><dd><span class="timeline-stat-number">2</);
 const jan=el('day-frequency-bars').querySelectorAll('[data-frequency-bucket]').find(bar=>bar.dataset.frequencyBucket==='1');
@@ -165,6 +167,7 @@ assert.match(el('timeline-stats').innerHTML,/<dt>事件<\/dt><dd aria-label="日
 el('search').value='synthetic-no-match';
 el('search').oninput();
 assert.match(el('timeline-stats').innerHTML,/aria-label="命中 0，日期条件 1，共 2"/);
+assert.equal(el('map-title').textContent,'地点 · 0');
 el('unselect').onclick();
 assert.equal(el('timeline-date-labels').textContent,'1月');
 el('search').value='synthetic-no-match';
@@ -176,7 +179,7 @@ assert.equal(el('search').value,'synthetic-no-match');
 el('search').value='';
 editTimeRange('2026-01-03','2026-01-01');
 assert.equal(el('timeline-range-error').hidden,false);
-assert.equal(rangeText(),'·2025/12/31-2026/01/01');
+assert.equal(rangeText(),' · 2025/12/31-2026/01/01');
 el('timeline-range-cancel').onclick();
 editTimeRange(...previousDates);
 el('timeline-mode-overview').onclick();

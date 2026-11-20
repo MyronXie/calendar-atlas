@@ -1,6 +1,6 @@
 import {annualLegend,cityKey,drawAnnualImage,drawAnnualMap,drawShanghaiMap,layoutMapLabels,mapAttribution,shanghaiDistricts,shanghaiMapPlaces,shanghaiMetroLayers,shanghaiName} from './annual-review.js';
 import {basemaps} from './basemaps.js';
-import {periodCounts,addMatches,barHeights,matchedLabelPlacement,frequencyBuckets,periodRange,dateBucket,dateBucketLabel,dateConditionLabels,hourGroups} from './timeline.js';
+import {periodCounts,addMatches,barHeights,matchedLabelPlacement,frequencyBuckets,periodRange,dateBucket,dateBucketLabel,dateConditionLabels,dateBucketGroups} from './timeline.js';
 import {palettes,resolveTheme,coordinateLabel,highlightLabelColor} from './appearance.js';
 import {criterion,toggleCriterion,matchesFilters,matchesCriterionText,matchesCriterionDate,searchCriterion,criterionDisplay,eventParts,eventCriteria,rankSections,toggleRankHidden} from './filters.js';
 import {selectEmoji} from './emoji.js';
@@ -31,7 +31,7 @@ try{
   if(typeof saved?.[key]==='boolean')shanghaiLayerOptions[key]=saved[key];
  }
 }catch{}
-const $=id=>document.getElementById(id);let currentTheme=resolveTheme(localStorage.getItem('atlas-theme'));const colors=()=>palettes[currentTheme];let collapsedSections={};try{collapsedSections=JSON.parse(localStorage.getItem('atlas-sections')||'{}')||{};}catch{}let activeCriteria=[];let rankHidden={places:[],types:[],partners:[],groups:[]};try{const saved=JSON.parse(localStorage.getItem('atlas-rank-hidden-v1'));for(const k of Object.keys(rankHidden))if(Array.isArray(saved?.[k]))rankHidden[k]=saved[k].filter(n=>typeof n==='string');}catch{}let source=[],filtered=[],world,china,cities=[],tab='places',limit=50,points=[];
+const $=id=>document.getElementById(id);let currentTheme=resolveTheme(localStorage.getItem('atlas-theme'));const colors=()=>palettes[currentTheme];let collapsedSections={};try{collapsedSections=JSON.parse(localStorage.getItem('atlas-sections')||'{}')||{};}catch{}collapsedSections.map??=true;let activeCriteria=[];let rankHidden={places:[],types:[],partners:[],groups:[]};try{const saved=JSON.parse(localStorage.getItem('atlas-rank-hidden-v1'));for(const k of Object.keys(rankHidden))if(Array.isArray(saved?.[k]))rankHidden[k]=saved[k].filter(n=>typeof n==='string');}catch{}let source=[],filtered=[],world,china,cities=[],tab='places',limit=50,points=[];
 const countOptionIds=['merge-same-day','split-trip-days','recurring'];
 try{
  const saved=JSON.parse(localStorage.getItem('atlas-count-options'));
@@ -56,10 +56,11 @@ function setupGaz(){gaz=[];for(const f of world?.features||[]){const p=f.propert
 function locate(name){const m=name.match(/(?:geo:)?(-?\d{1,2}\.\d{3,})\s*[,，;]\s*(-?\d{1,3}\.\d{3,})/i);if(m&&validCoord({lat:m[1],lon:m[2]}))return {...inferRegion(+m[1],+m[2]),lat:+m[1],lon:+m[2],precision:'exact'};const key=normalizePlace(name);const base=baseCoords.get(key);if(base){if(!validCoord(base)){const approx=lookup([base.city,base.province,base.country].filter(Boolean).join(' '))||lookup(name);return approx?{...approx,...Object.fromEntries(['country','province','city'].filter(k=>base[k]).map(k=>[k,base[k]]))}:null;}let p={lat:Number(base.lat),lon:Number(base.lon),precision:'exact'};[p.lat,p.lon]=toWgs(p.lat,p.lon,base.datum||$('datum').value);const inferred=base.country&&base.province&&base.city?{}:inferRegion(p.lat,p.lon);return {...inferred,...Object.fromEntries(['country','province','city'].filter(k=>base[k]).map(k=>[k,base[k]])),...p};}return lookup(name);}
 function lookup(name){const s=normalize(name);let hits=gaz.filter(p=>p.terms.some(t=>{if(!t||t.length<2)return false;const term=normalize(t);if(s===term)return true;const official=/省$|市$|区$|县$|自治区$|特别行政区$/.test(t);return official&&s.startsWith(term);}));hits.sort((a,b)=>({city:3,province:2,country:1}[b.precision]-{city:3,province:2,country:1}[a.precision]));if(!hits.length)return null;const best=hits[0],peers=hits.filter(x=>x.precision===best.precision);if(peers.length>1){const qualified=peers.filter(x=>x.province&&s.includes(normalize(x.province.replace(/省|市/g,''))));if(qualified.length!==1)return null;return qualified[0];}return best;}
 let cache=new Map();function pos(name){if(!cache.has(name))cache.set(name,locate(name));return cache.get(name);}
-let timeMode='overview',overviewUnit='year',selectedRange=[];
+let timeMode='overview',overviewUnit='year',selectedRange=[],rangeCustomized=false;
 const focusView=()=>timeMode==='focus';
 const dateInputValue=date=>date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0');
-function setRecentRange(){
+function setRecentRange(customized=false){
+ rangeCustomized=customized;
  const now=new Date(),from=new Date(now.getFullYear()-1,now.getMonth(),now.getDate()+1);
  selectedRange=[dateInputValue(from),dateInputValue(now)];
 }
@@ -80,17 +81,20 @@ function refresh({timeline=true,fitBeforeDraw=false}={}){
  const [start,end]=selectedRange;
  const from=new Date(start+'T00:00:00'),to=new Date(end+'T23:59:59.999');
  const rangeLabel=start.replaceAll('-','/')+'-'+end.replaceAll('-','/');
- $('timeline-range-label').textContent='·'+rangeLabel;
- $('timeline-range').setAttribute('aria-label','修改时间范围 '+rangeLabel);
+ $('timeline-range-label').textContent=' · '+rangeLabel;
  const result=rangeEvents(from,to);
  const draft=$('search').value.trim();
  draftCriterion=draft?searchCriterion($('searchscope').value||'all',draft,result.events):null;
  appliedCriteria=draftCriterion&&!activeCriteria.some(c=>c.id===draftCriterion.id)?[...activeCriteria,draftCriterion]:activeCriteria;
  const dates=appliedCriteria.filter(c=>c.kind==='time');
  const others=appliedCriteria.filter(c=>c.kind!=='time');
+ const timeFilterActive=rangeCustomized||dates.length>0;
+ $('timeline-range-indicator').hidden=!timeFilterActive;
+ $('timeline-range').setAttribute('aria-label','修改时间范围 '+rangeLabel+(timeFilterActive?'，已启用时间筛选':''));
  const scoped=dates.length?result.events.filter(event=>matchesFilters(event,dates,placeType)):result.events;
  filtered=others.length?scoped.filter(event=>matchesFilters(event,others,placeType)):scoped;
  countedRows=[...occurrenceDays(filtered,from,to,$('split-trip-days').checked,true)];
+ $('map-title').textContent='地点 · '+new Set(countedRows.flatMap(row=>row.places)).size;
  limit=50;
  $('status').textContent=result.errors||result.capped?'部分重复事件无法完整展开，请缩小时间范围。':'';
  renderDateConditions(dates);
@@ -210,7 +214,7 @@ function renderFocusChart(){
   applyCriterion(dateCriterion(focusUnit,value));
   bars.querySelector('[data-frequency-bucket="'+value+'"]')?.focus({preventScroll:true});
  };
- renderHourGroups();
+ renderDateGroups(rows.length);
  fitFrequencyChart();
 }
 function toggleTimelineButton(button,active){
@@ -233,29 +237,32 @@ function clearDateConditions(){
  refresh();
 }
 $('timeline-clear-dates').onclick=$('timeline-date-clear').onclick=clearDateConditions;
-function renderHourGroups(){
- const groups=$('focus-hour-groups');
- groups.hidden=focusUnit!=='hour';
- if(groups.hidden)return;
- const selected=new Set(activeCriteria.filter(c=>c.kind==='time'&&c.scope==='hour').map(c=>Number(c.value)));
- const parts=hourGroups.flatMap(group=>group.ranges.map(([start,end])=>({group,start,end}))).sort((a,b)=>a.start-b.start);
- groups.innerHTML=parts.map(({group,start,end})=>{
-  const active=group.hours.every(hour=>selected.has(hour));
+function renderDateGroups(slots){
+ const bar=$('focus-date-groups'),unit=focusUnit;
+ const groups=dateBucketGroups(unit);
+ bar.hidden=!groups.length;
+ if(bar.hidden)return;
+ bar.style.setProperty('--frequency-slots',slots);
+ const selected=new Set(activeCriteria.filter(c=>c.kind==='time'&&c.scope===unit).map(c=>Number(c.value)));
+ const parts=groups.flatMap(group=>group.ranges.map(([start,end])=>({group,start,end}))).sort((a,b)=>a.start-b.start);
+ const offset=unit==='hour'||unit==='weekday'?1:0;
+ bar.innerHTML=parts.map(({group,start,end})=>{
+  const active=group.values.every(value=>selected.has(value));
   const edge=hour=>String(hour).padStart(2,'0')+':00';
   const [first,last]=group.ranges;
-  const label=group.label+' '+edge(last?last[0]:first[0])+'–'+edge(first[1]);
-  return '<button type="button" style="grid-column:'+(start+1)+' / '+(end+1)+'" data-hour-part="'+start
+  const label=group.label+(unit==='hour'?' '+edge((last||first)[0])+'–'+edge(first[1]):'');
+  return '<button type="button" style="grid-column:'+(start+offset)+' / '+(end+offset)+'" data-date-part="'+start
    +'" title="'+label+'" aria-label="'+label+'" aria-pressed="'+active+'">'+group.label+'</button>';
  }).join('');
- for(const button of groups.querySelectorAll('[data-hour-part]'))button.onclick=()=>{
-  const part=parts.find(item=>item.start===Number(button.dataset.hourPart));
-  const criteria=part.group.hours.map(hour=>dateCriterion('hour',hour));
+ for(const button of bar.querySelectorAll('[data-date-part]'))button.onclick=()=>{
+  const part=parts.find(item=>item.start===Number(button.dataset.datePart));
+  const criteria=part.group.values.map(value=>dateCriterion(unit,value));
   const ids=new Set(criteria.map(c=>c.id));
-  const remove=part.group.hours.every(hour=>selected.has(hour));
+  const remove=part.group.values.every(value=>selected.has(value));
   activeCriteria=activeCriteria.filter(c=>!ids.has(c.id));
   if(!remove)activeCriteria.push(...criteria);
   refresh();
-  groups.querySelector('[data-hour-part="'+part.start+'"]')?.focus({preventScroll:true});
+  bar.querySelector('[data-date-part="'+part.start+'"]')?.focus({preventScroll:true});
  };
 }
 function fitFrequencyChart(){
@@ -361,6 +368,7 @@ $('events-back-top').onclick=()=>scrollToHeading('collapse-eventlist');
 function selectEventRange(event){
  const {start,end}=tripDates(event);
  selectedRange=[start,end];
+ rangeCustomized=true;
  if(collapsedSections.timeline){
   collapsedSections.timeline=false;
   localStorage.setItem('atlas-sections',JSON.stringify(collapsedSections));
@@ -525,6 +533,7 @@ function buildPoints(){
  points=[...byKey.values()].map(p=>({...p,count:totals.get(p.regionKey)}));
 }
 function fitPoints(){
+ if($('map-body').hidden)return;
  if(mapLevel()==='shanghai')return;
  if(mapLevel()!=='place'){fitOverview();return;}
  const good=points.filter(p=>validCoord(p));
@@ -728,7 +737,7 @@ function drawPlaceMarkers(heat){
  if(heat)drawHeat(circles);
  if(!map.hasLayer(markerLayer))markerLayer.addTo(map);
 }
-function draw(){clearTouchPreview();shanghaiLayerControl.hidden=mapLevel()!=='shanghai';
+function draw(){if($('map-body').hidden)return;clearTouchPreview();shanghaiLayerControl.hidden=mapLevel()!=='shanghai';
  domesticLayerControl.hidden=!isDomesticLevel(mapLevel());
  domesticLayerControl.querySelector('summary').textContent=domesticLevel==='city'?'图层 · 城市':'图层 · 省份';
  for(const radio of domesticLayerControl.querySelectorAll('input[type="radio"]'))radio.checked=radio.value===domesticLevel;
@@ -736,7 +745,7 @@ function draw(){clearTouchPreview();shanghaiLayerControl.hidden=mapLevel()!=='sh
  placeToggles.hidden=mapLevel()!=='place';
  for(const input of placeToggles.querySelectorAll('input'))input.checked=$(input.name).checked;const heat=Boolean($('heatmap')&&$('heatmap').checked)&&mapLevel()==='place';if(mapLevel()!=='place'){drawOverview();return;}map.options.zoomSnap=1;map.setMinZoom(0);map.setMaxZoom(18);overviewLevel='';clearOverview();if(!tiles||!map.hasLayer(tiles))setProvider(false);$('provider').disabled=false;$('provider').style.display='';if(heatLayer)map.removeLayer(heatLayer);drawPlaceMarkers(heat);}
 map.on('click',e=>{clearTouchPreview();if(!pickMode)return;pickMode=false;const p=basemaps[$('provider').value]?.gcj02&&mapLevel()==='place'&&isMainland(e.latlng.lat,e.latlng.lng)?gcjToWgs(e.latlng.lat,e.latlng.lng):[e.latlng.lat,e.latlng.lng];$('editform').elements.lat.value=p[0].toFixed(6);$('editform').elements.lon.value=p[1].toFixed(6);$('editform').elements.datum.value='wgs84';$('editor').showModal();$('status').textContent='已选取坐标，点击保存完成标注';});
-$('pickpoint').onclick=()=>{if(mapLevel()!=='place'){$('level').value='place';buildPoints();draw();fitPoints();}pickMode=true;$('editor').close();$('status').textContent='请在地图上点击精确位置（坐标仅存本机）';};
+$('pickpoint').onclick=()=>{if(mapLevel()!=='place'){$('level').value='place';buildPoints();}if($('map-body').hidden)setSectionCollapsed('map',false);else{draw();fitPoints();}pickMode=true;$('editor').close();$('status').textContent='请在地图上点击精确位置（坐标仅存本机）';};
 $('reset').onclick=()=>mapLevel()==='shanghai'?fitOverview():fitPoints();$('level').onchange=async()=>{const lv=mapLevel();if(lv==='shanghai'){await enterShanghaiMap();return;}if(lv==='country'&&!world){$('status').textContent='正在加载国家边界…';try{world=await (await fetch('data/world.json')).json();setupGaz();cache.clear();}catch{}finally{$('status').textContent='';}}if(mapLevel()!==lv)return;buildPoints();draw();fitPoints();};$('exclude').onchange=refresh;$('search').oninput=()=>{refresh();};$('searchscope').onchange=()=>refresh();$('searchform').onsubmit=e=>{e.preventDefault();const value=$('search').value.trim();if(!value)return;const c=searchCriterion($('searchscope').value||'all',value,rangeCache?.events||[]);if(!activeCriteria.some(x=>x.id===c.id))activeCriteria.push(c);$('search').value='';refresh();fitPoints();};$('more').onclick=()=>{limit+=50;renderEvents();};$('unselect').onclick=()=>{activeCriteria=activeCriteria.filter(c=>c.kind==='time');$('search').value='';limit=50;refresh();};document.querySelectorAll('[data-panel]').forEach(el=>el.onclick=()=>{tab=el.dataset.tab;document.querySelectorAll('[data-panel]').forEach(x=>x.classList.toggle('active',x===el));renderRank();});document.querySelectorAll('[data-settings-panel]').forEach(el=>el.onclick=()=>{activePanel=el.dataset.settingsPanel;document.querySelectorAll('[data-settings-panel]').forEach(x=>x.classList.toggle('active',x===el));$('settings-drawer').querySelectorAll('[data-content]').forEach(x=>x.hidden=x.dataset.content!==activePanel);if(activePanel==='manage')renderPlaces();});
 try{
  const pref=JSON.parse(localStorage.getItem('atlas-event-columns')||'{}');
@@ -875,8 +884,9 @@ function fitOverviewChart(){
  $('timeline-month-axis').innerHTML=labels.map(({center,year,label})=>'<span data-axis-year="'+year+'" style="left:'+center+'px">'+label+'</span>').join('');
 }
 if(typeof ResizeObserver==='function')new ResizeObserver(fitOverviewChart).observe(overviewBars);
-function setTimeRange(start,end){
+function setTimeRange(start,end,customized=true){
  selectedRange=[start,end];
+ rangeCustomized=customized;
  refresh();
 }
 function selectPeriods(first,last){
@@ -903,7 +913,7 @@ for(const unit of ['year','month'])$('timeline-overview-'+unit).onclick=()=>{
 };
 $('timeline-recent').onclick=()=>{
  if(!source.length)return;
- setRecentRange();
+ setRecentRange(true);
  refresh();
 };
 $('timeline-all').onclick=()=>{
@@ -915,7 +925,7 @@ $('timeline-all').onclick=()=>{
   first=Math.min(first,+event.start);
   last=Math.max(last,event.end>event.start?+event.end-1:+event.start);
  }
- setTimeRange(dateInputValue(new Date(first)),dateInputValue(new Date(Math.max(last,Date.now()))));
+ setTimeRange(dateInputValue(new Date(first)),dateInputValue(new Date(Math.max(last,Date.now()))),false);
 };
 
 let periodGesture;
@@ -972,7 +982,7 @@ function setProvider(redraw=true){
  tiles=L.tileLayer(url,{maxZoom:18,...options});
  tiles.on('tileerror',()=>{$('mapnotice').textContent='底图加载失败，可切换另一底图';});
  tiles.on('tileload',()=>{$('mapnotice').textContent='';});
- if(mapLevel()==='place')tiles.addTo(map);
+ if(mapLevel()==='place'&&!$('map-body').hidden)tiles.addTo(map);
  localStorage.setItem('atlas-provider-v2',value);
  if(redraw)draw();
 }
@@ -1192,6 +1202,7 @@ function applyTheme(key){
  currentTheme=resolveTheme(key);
  const theme=colors();
  document.body.style.setProperty('--bar-match-ink',highlightLabelColor(theme));
+ document.body.style.setProperty('--selected-ink',highlightLabelColor({highlight:theme.accent,dark:theme.dark}));
  for(const [tone,value] of Object.entries(theme)){
   if(tone!=='name')document.body.style.setProperty('--'+(tone==='dark'?'deep':tone),value);
  }
@@ -1219,8 +1230,30 @@ function renderThemeOptions(){
 for(const [id,render] of [['place-list-details',renderPlaces],['rule-list-details',renderBlacklist],['theme-list-details',renderThemeOptions]]){
  $(id).ontoggle=()=>{if($(id).open)render();};
 }
-function collapseSection(key){const closed=Boolean(collapsedSections[key]);$(key+'-body').hidden=closed;const button=$('collapse-'+key);button.setAttribute('aria-expanded',String(!closed));if(key==='timeline')$('timeline-controls').hidden=closed;if(key==='map'&&!closed)setTimeout(()=>{map.invalidateSize();fitPoints();},50);}
-for(const key of ['map','timeline','eventlist']){$('collapse-'+key).onclick=()=>{collapsedSections[key]=!collapsedSections[key];localStorage.setItem('atlas-sections',JSON.stringify(collapsedSections));collapseSection(key);};collapseSection(key);}applyTheme(currentTheme);
+function collapseSection(key){
+ const closed=Boolean(collapsedSections[key]);
+ $(key+'-body').hidden=closed;
+ $('collapse-'+key).setAttribute('aria-expanded',String(!closed));
+ if(key==='timeline')$('timeline-controls').hidden=closed;
+ if(key==='map'){
+  $('map-tools').hidden=closed;
+  if(!closed)map.invalidateSize({pan:false});
+ }
+}
+function setSectionCollapsed(key,closed){
+ collapsedSections[key]=closed;
+ localStorage.setItem('atlas-sections',JSON.stringify(collapsedSections));
+ collapseSection(key);
+ if(key==='map'&&!closed){
+  draw();
+  fitPoints();
+ }
+}
+for(const key of ['map','timeline','eventlist']){
+ $('collapse-'+key).onclick=()=>setSectionCollapsed(key,!collapsedSections[key]);
+ collapseSection(key);
+}
+applyTheme(currentTheme);
 
 function settingsDrawer(open,restoreFocus=true){
  if(open&&narrowDrawers?.matches&&rankDrawerOpen)drawer(false,false);
@@ -2238,7 +2271,9 @@ async function startAtlas(){
 await startAtlas();
 (()=>{
  const level=new URLSearchParams(globalThis.location?.search).get('level');
- if(['place','shanghai','domestic','country'].includes(level))$('level').value=level;
+ if(!['place','shanghai','domestic','country'].includes(level))return;
+ $('level').value=level;
+ if($('map-body').hidden)setSectionCollapsed('map',false);
  if(mapLevel()!=='place')$('level').dispatchEvent(new Event('change'));
 })();
 (()=>{try{const ay=new URLSearchParams(location.search).get('annual');if(ay)setTimeout(()=>{const b=annualYears(),y=Number(ay)||new Date().getFullYear();openAnnualReview(Math.max(b.min,Math.min(b.max,y)));},500);}catch{}})();
