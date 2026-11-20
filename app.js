@@ -2,7 +2,7 @@ import {annualLegend,cityKey,drawAnnualImage,drawAnnualMap,drawShanghaiMap,layou
 import {basemaps} from './basemaps.js';
 import {periodCounts,addMatches,barHeights,brushLabelLayout,matchedLabelPlacement,frequencyBuckets} from './timeline.js';
 import {palettes,resolveTheme,coordinateLabel,highlightLabelColor} from './appearance.js';
-import {criterion,toggleCriterion,matchesFilters,matchesCriterionText,searchCriterion,criterionDisplay,eventParts,eventCriteria,rankSections,toggleRankHidden} from './filters.js';
+import {criterion,toggleCriterion,matchesFilters,matchesCriterionText,matchesCriterionDate,searchCriterion,criterionDisplay,eventParts,eventCriteria,rankSections,toggleRankHidden} from './filters.js';
 import {selectEmoji} from './emoji.js';
 import {placeTypes,placeIndex,regionFromAddress} from './place-categories.js';
 import {parseCalendar,expand,details,escape as E,validCoord} from './core.js';
@@ -79,6 +79,7 @@ let lastValidRange=[];
 function refresh({timeline=true,fitBeforeDraw=false}={}){
  const from=new Date($('from').value+'T00:00:00'),to=new Date($('to').value+'T23:59:59.999');
  const invalid=isNaN(from)||isNaN(to)||from>to;
+ $('timeline-stats-panel').hidden=invalid;
  if(dayView())setDayRangeError(invalid);
  if(invalid){$('status').textContent='请选择有效的起止日期';return;}
  lastValidRange=[$('from').value,$('to').value];
@@ -90,7 +91,12 @@ function refresh({timeline=true,fitBeforeDraw=false}={}){
  countedRows=[...occurrenceDays(filtered,from,to,$('split-trip-days').checked,true)];
  limit=50;
  $('status').textContent=result.errors||result.capped?'部分重复事件无法完整展开，请缩小时间范围。':'';
- if(dayView())renderDayStats(result.events,from,to,appliedCriteria.length>0);
+ const hasFilters=appliedCriteria.length>0;
+ renderTimeStats(result.events,from,to,hasFilters);
+ if(dayView()){
+  dayFrequencyData={events:result.events,matched:hasFilters?filtered:null,from,to};
+  renderDayFrequency();
+ }
  else if(timeline)syncYears();
  buildPoints();
  if(rankDrawerOpen)renderRank();
@@ -103,7 +109,6 @@ function setDayRangeError(invalid){
  const status=$('timeline-day-status');
  status.textContent=invalid?'请选择有效的起止日期，终止日期须不早于起始日期。':'';
  status.hidden=!invalid;
- $('timeline-day-stats').hidden=invalid;
  $('day-frequency').hidden=invalid;
  for(const id of ['from','to'])$(id).setAttribute('aria-invalid',String(invalid));
 }
@@ -115,27 +120,37 @@ function activityStats(events,rows,places=new Set(rows.flatMap(row=>row.places))
   ['同伴',new Set(rows.flatMap(row=>row.event.partners)).size],
  ];
 }
-function renderDayStats(events,from,to,filtering){
+function renderTimeStats(events,from,to,filtering){
  const split=$('split-trip-days').checked;
  const summarize=records=>activityStats(records,[...occurrenceDays(records,from,to,split)]);
  const totals=summarize(events);
  const matches=filtering?summarize(filtered):null;
- const stats=$('timeline-day-stats');
+ const stats=$('timeline-stats');
  const weights=[];
  stats.innerHTML=totals.map(([label,total],i)=>{
   const hit=matches?.[i][1];
-  const count=matches?'<strong class="timeline-day-hit">'+hit+'</strong><span aria-hidden="true"> / </span>'+total:total;
+  const count=matches?'<strong class="timeline-stat-hit">'+hit+'</strong><span aria-hidden="true"> / </span>'+total:total;
   const description=matches?' aria-label="命中 '+hit+'，共 '+total+'"':'';
   const characters=String(total).length+(matches?String(hit).length+1:0);
   weights.push('minmax(0,'+Math.max(5,characters)+'fr)');
   return '<div><dt>'+label+'</dt><dd'+description+'>'
-   +'<span class="timeline-day-number">'+count+'</span></dd></div>';
+   +'<span class="timeline-stat-number">'+count+'</span></dd></div>';
  }).join('');
- stats.style.setProperty('--day-stat-columns',weights.join(' '));
- fitDayStatValues();
- dayFrequencyData={events,matched:filtering?filtered:null,from,to};
- renderDayFrequency();
+ stats.style.setProperty('--timeline-stat-columns',weights.join(' '));
+ fitTimeStatValues();
 }
+function setTimeStatsVisibility(){
+ const hidden=Boolean(collapsedSections.timeStats);
+ $('timeline-stats').hidden=hidden;
+ $('timeline-stats-toggle').setAttribute('aria-expanded',String(!hidden));
+ if(!hidden)fitTimeStatValues();
+}
+$('timeline-stats-toggle').onclick=()=>{
+ collapsedSections.timeStats=!collapsedSections.timeStats;
+ try{localStorage.setItem('atlas-sections',JSON.stringify(collapsedSections));}catch{}
+ setTimeStatsVisibility();
+};
+setTimeStatsVisibility();
 let dayFrequencyData;
 let dayFrequencyUnit='month';
 const frequencyButtons=document.querySelectorAll('[data-frequency]');
@@ -143,22 +158,26 @@ function renderDayFrequency(){
  if(!dayFrequencyData)return;
  const {events,matched,from,to}=dayFrequencyData;
  const rows=frequencyBuckets(events,matched,dayFrequencyUnit,from,to);
- const bars=$('day-frequency-bars'),detail=$('day-frequency-detail');
- detail.textContent='';
+ const bars=$('day-frequency-bars');
  const peak=Math.max(1,...rows.map(row=>row.total));
- bars.style.setProperty('--frequency-columns',rows.length);
- bars.classList.toggle('frequency-years',dayFrequencyUnit==='year'&&rows.length>=12);
- bars.innerHTML=rows.map(({label,title,total,matched:hit})=>{
-  const description=title+' · '+(matched?hit+' / ':'')+total+' 条事件';
-  return '<button type="button" class="frequency-bar" data-frequency-bucket="'+E(description)+'" title="'+E(description)
-   +'" aria-label="'+E(description)+'" style="--frequency-total:'+100*total/peak+'%;--frequency-hit:'+100*hit/peak+'%">'
-   +'<span class="frequency-track"><i></i>'+(matched?'<i class="frequency-hit"></i>':'')+'</span>'
-   +'<span class="frequency-tick">'+label+'</span>'
-   +(dayFrequencyUnit==='year'&&label.length===4?'<span class="frequency-short">'+label.slice(2)+'</span>':'')+'</button>';
+ const criteria=rows.map(({value,title})=>criterion('time',String(value),{scope:dayFrequencyUnit,label:title}));
+ bars.innerHTML=rows.map((row,i)=>{
+  const {label,title,total,matched:hit}=row;
+  const active=activeCriteria.some(c=>c.id===criteria[i].id);
+  const description=barDescription(title,total,hit,Boolean(matched));
+  const shortLabel=dayFrequencyUnit==='year'?'&#39;'+label.slice(-2):label;
+  return '<button type="button" class="yearbar frequency-bar'+(active?' selected':'')+'" data-frequency-bucket="'+i
+   +'" data-total="'+total+'" data-matched="'+hit+'" aria-pressed="'+active+'" title="'+E(description)+'" aria-label="'+E(description)+'">'
+   +timelineBar({total,matched:hit,peak,filtering:Boolean(matched),label,shortLabel})+'</button>';
  }).join('');
  for(const bar of bars.querySelectorAll('[data-frequency-bucket]')){
-  bar.onclick=bar.onfocus=()=>{detail.textContent=bar.dataset.frequencyBucket;};
+  bar.onclick=()=>{
+   const index=+bar.dataset.frequencyBucket;
+   applyCriterion(criteria[index]);
+   $('day-frequency-bars').querySelector('[data-frequency-bucket="'+index+'"]')?.focus({preventScroll:true});
+  };
  }
+ fitFrequencyChart();
 }
 for(const button of frequencyButtons)button.onclick=()=>{
  dayFrequencyUnit=button.dataset.frequency;
@@ -169,10 +188,14 @@ for(const button of frequencyButtons)button.onclick=()=>{
  }
  renderDayFrequency();
 };
-function fitDayStatValues(){
- const stats=$('timeline-day-stats');
+function fitFrequencyChart(){
+ const bars=$('day-frequency-bars');
+ fitTimelineColumns(bars,bars.clientWidth,bars.childElementCount);
+}
+function fitTimeStatValues(){
+ const stats=$('timeline-stats');
  if(!stats.clientWidth)return;
- const values=[...stats.querySelectorAll('.timeline-day-number')];
+ const values=[...stats.querySelectorAll('.timeline-stat-number')];
  for(const value of values)value.style.fontSize='';
  const sizes=values.map(value=>{
   const width=value.getBoundingClientRect().width,available=value.parentElement.clientWidth;
@@ -180,7 +203,10 @@ function fitDayStatValues(){
  });
  for(const [i,size] of sizes.entries())if(size!==null)values[i].style.fontSize=size+'px';
 }
-if(typeof ResizeObserver==='function')new ResizeObserver(fitDayStatValues).observe($('timeline-day-stats'));
+if(typeof ResizeObserver==='function'){
+ new ResizeObserver(fitTimeStatValues).observe($('timeline-stats'));
+ new ResizeObserver(fitFrequencyChart).observe($('day-frequency-bars'));
+}
 function placeType(name){return baseCoords.get(normalizePlace(name))?.type?.trim() || 'other';}
 function typeLabel(type){return Object.hasOwn(placeTypes,type) ? placeTypes[type] : type;}
 const rankKinds={places:'place',types:'placeType',partners:'person',groups:'group'};
@@ -289,9 +315,12 @@ function renderEvents(){
   const start=event.start,year=String(start.getFullYear());
   const [month,date,hour,minute]=[start.getMonth()+1,start.getDate(),start.getHours(),start.getMinutes()]
    .map(value=>String(value).padStart(2,'0'));
-  const weekday=' ('+'日一二三四五六'[start.getDay()]+')';
-  const time='<span class="event-date">'+year+'/'+month+'/'+date+'<span class="event-weekday-wide">'+weekday
-   +'</span></span> <span class="event-clock">'+hour+':'+minute+'<span class="event-weekday-narrow">'+weekday+'</span></span>';
+  const dateField=(unit,value)=>appliedCriteria.some(c=>c.scope===unit&&matchesCriterionDate(c,start))
+   ?'<mark class="filter-highlight">'+value+'</mark>':value;
+  const weekday=' ('+dateField('weekday','日一二三四五六'[start.getDay()])+')';
+  const time='<span class="event-date">'+dateField('year',year)+'/'+dateField('month',month)+'/'+dateField('date',date)
+   +'<span class="event-weekday-wide">'+weekday+'</span></span> <span class="event-clock">'+hour+':'+minute
+   +'<span class="event-weekday-narrow">'+weekday+'</span></span>';
   const trip=isTrip(event)?'<button type="button" class="event-action event-trip" data-trip-event="'+i+'" aria-label="查看行程详细">详细</button>':'';
   return '<article class="event"><div class="eventrow"><button type="button" class="event-time" data-event-range="'+i
    +'" title="查看这段时间的事件"><time datetime="'+event.start.toISOString()+'">'+time+'</time></button>'
@@ -643,7 +672,7 @@ function draw(){clearTouchPreview();shanghaiLayerControl.hidden=mapLevel()!=='sh
  for(const input of placeToggles.querySelectorAll('input'))input.checked=$(input.name).checked;const heat=Boolean($('heatmap')&&$('heatmap').checked)&&mapLevel()==='place';if(mapLevel()!=='place'){drawOverview();return;}map.options.zoomSnap=1;map.setMinZoom(0);map.setMaxZoom(18);overviewLevel='';clearOverview();if(!tiles||!map.hasLayer(tiles))setProvider(false);$('provider').disabled=false;$('provider').style.display='';if(heatLayer)map.removeLayer(heatLayer);drawPlaceMarkers(heat);}
 map.on('click',e=>{clearTouchPreview();if(!pickMode)return;pickMode=false;const p=basemaps[$('provider').value]?.gcj02&&mapLevel()==='place'&&isMainland(e.latlng.lat,e.latlng.lng)?gcjToWgs(e.latlng.lat,e.latlng.lng):[e.latlng.lat,e.latlng.lng];$('editform').elements.lat.value=p[0].toFixed(6);$('editform').elements.lon.value=p[1].toFixed(6);$('editform').elements.datum.value='wgs84';$('editor').showModal();$('status').textContent='已选取坐标，点击保存完成标注';});
 $('pickpoint').onclick=()=>{if(mapLevel()!=='place'){$('level').value='place';buildPoints();draw();fitPoints();}pickMode=true;$('editor').close();$('status').textContent='请在地图上点击精确位置（坐标仅存本机）';};
-$('reset').onclick=()=>mapLevel()==='shanghai'?fitOverview():fitPoints();$('level').onchange=async()=>{const lv=mapLevel();if(lv==='shanghai'){await enterShanghaiMap();return;}if(lv==='country'&&!world){$('status').textContent='正在加载国家边界…';try{world=await (await fetch('data/world.json')).json();setupGaz();cache.clear();}catch{}finally{$('status').textContent='';}}if(mapLevel()!==lv)return;buildPoints();draw();fitPoints();};for(const id of ['from','to','exclude'])$(id).onchange=refresh;$('search').oninput=()=>{refresh();};$('searchscope').onchange=()=>refresh();$('searchform').onsubmit=e=>{e.preventDefault();const value=$('search').value.trim();if(!value)return;const c=searchCriterion($('searchscope').value||'all',value,rangeCache?.events||[]);if(!activeCriteria.some(x=>x.id===c.id))activeCriteria.push(c);$('search').value='';refresh();fitPoints();};$('all').onclick=()=>loadOriginalRange();function loadOriginalRange(){if(dayView()){useFullDayRange();refresh();return;}const ds=source.map(e=>e.startDate.toJSDate().getTime());$('from').value=new Date(Math.min(...ds)).toISOString().slice(0,10);$('to').value=new Date(Math.max(Date.now(),...ds)).toISOString().slice(0,10);refresh();}$('year').onclick=()=>{setRecentRange();refresh();};$('more').onclick=()=>{limit+=50;renderEvents();};$('unselect').onclick=()=>{activeCriteria=[];$('search').value='';limit=50;refresh();};document.querySelectorAll('[data-panel]').forEach(el=>el.onclick=()=>{tab=el.dataset.tab;document.querySelectorAll('[data-panel]').forEach(x=>x.classList.toggle('active',x===el));renderRank();});document.querySelectorAll('[data-settings-panel]').forEach(el=>el.onclick=()=>{activePanel=el.dataset.settingsPanel;document.querySelectorAll('[data-settings-panel]').forEach(x=>x.classList.toggle('active',x===el));$('settings-drawer').querySelectorAll('[data-content]').forEach(x=>x.hidden=x.dataset.content!==activePanel);if(activePanel==='manage')renderPlaces();});
+$('reset').onclick=()=>mapLevel()==='shanghai'?fitOverview():fitPoints();$('level').onchange=async()=>{const lv=mapLevel();if(lv==='shanghai'){await enterShanghaiMap();return;}if(lv==='country'&&!world){$('status').textContent='正在加载国家边界…';try{world=await (await fetch('data/world.json')).json();setupGaz();cache.clear();}catch{}finally{$('status').textContent='';}}if(mapLevel()!==lv)return;buildPoints();draw();fitPoints();};for(const id of ['from','to','exclude'])$(id).onchange=refresh;$('search').oninput=()=>{refresh();};$('searchscope').onchange=()=>refresh();$('searchform').onsubmit=e=>{e.preventDefault();const value=$('search').value.trim();if(!value)return;const c=searchCriterion($('searchscope').value||'all',value,rangeCache?.events||[]);if(!activeCriteria.some(x=>x.id===c.id))activeCriteria.push(c);$('search').value='';refresh();fitPoints();};$('all').onclick=()=>loadOriginalRange();function loadOriginalRange(){if(!source.length)return;if(dayView()){useFullDayRange();refresh();return;}const ds=source.map(e=>e.startDate.toJSDate().getTime());$('from').value=new Date(Math.min(...ds)).toISOString().slice(0,10);$('to').value=new Date(Math.max(Date.now(),...ds)).toISOString().slice(0,10);refresh();}$('year').onclick=()=>{setRecentRange();refresh();};$('more').onclick=()=>{limit+=50;renderEvents();};$('unselect').onclick=()=>{activeCriteria=[];$('search').value='';limit=50;refresh();};document.querySelectorAll('[data-panel]').forEach(el=>el.onclick=()=>{tab=el.dataset.tab;document.querySelectorAll('[data-panel]').forEach(x=>x.classList.toggle('active',x===el));renderRank();});document.querySelectorAll('[data-settings-panel]').forEach(el=>el.onclick=()=>{activePanel=el.dataset.settingsPanel;document.querySelectorAll('[data-settings-panel]').forEach(x=>x.classList.toggle('active',x===el));$('settings-drawer').querySelectorAll('[data-content]').forEach(x=>x.hidden=x.dataset.content!==activePanel);if(activePanel==='manage')renderPlaces();});
 try{
  const pref=JSON.parse(localStorage.getItem('atlas-event-columns')||'{}');
  for(const key of Object.keys(eventColumns))eventColumns[key]=pref[key]!==false;
@@ -701,6 +730,18 @@ for(const id of countOptionIds)$(id).onchange=()=>{
  refresh({timeline:id!=='merge-same-day'});
 };
 function ensureTimeline(){const key=JSON.stringify([source.length,yearMin,yearMax,$('recurring').checked,$('exclude').checked,rules,csvVersion]);if(key!==timelineKey){timelineEvents=applyRules(expand(source,new Date(yearMin,0,1),new Date(yearMax,11,31,23,59,59,999),$('recurring').checked).events,rules,$('exclude').checked,new Set()).events;timelineKey=key;}}
+function barDescription(label,total,matched,filtering){
+ return label+' · '+(filtering?'命中 '+matched+'，':'')+'共 '+total+' 条事件';
+}
+function timelineBar({total,matched,peak,filtering,label,shortLabel,showCounts=true}){
+ const heights=barHeights(total,filtering?matched:0,peak);
+ const placement=showCounts?matchedLabelPlacement(heights):'above';
+ const count=(value,className)=>'<span class="'+className+'" style="--count-digits:'+String(value).length+'" aria-hidden="true">'+value+'</span>';
+ return '<span class="bar-stack '+placement+'" style="height:'+heights.total+'px;--matched-height:'+heights.matched+'px">'
+  +'<i class="bar-original"></i>'+(filtering?'<i class="bar-matched"></i>':'')
+  +(showCounts&&total?count(total,'barcount')+(heights.matched?count(matched,'bar-match-count'):''):'')
+  +'</span>'+(label?'<span class="year-full">'+label+'</span><span class="year-short" aria-hidden="true">'+shortLabel+'</span>':'');
+}
 function syncYears(){
  if(dayView())return;
  ensureTimeline();
@@ -726,20 +767,14 @@ function syncYears(){
  $('period-start').textContent=label(a);
  $('period-end').textContent=label(b);
  bars.classList.toggle('single-selection',a===b);
- const count=(value,className)=>'<span class="'+className+'" style="--count-digits:'+String(value).length+'" aria-hidden="true">'+value+'</span>';
  bars.innerHTML=periods.map(({index,total,matched})=>{
-  const heights=barHeights(total,filtering?matched:0,peak);
-  const placement=monthly?'above':matchedLabelPlacement(heights);
   const date=label(index);
-  const description=date+' · '+(filtering?'命中 '+matched+'，':'')+'共 '+total+' 条事件';
+  const description=barDescription(date,total,matched,filtering);
   const mode=monthly?Math.floor(index/12):index;
   return '<button class="yearbar '+(index>=a&&index<=b?'selected ':'')+(mode%2?'year-dark':'year-light')
    +(monthly&&index%12===0&&index>min?' year-start':'')+'" data-period="'+index+'" data-total="'+total
    +'" data-matched="'+matched+'" title="'+description+'" aria-label="'+description+'">'
-   +'<span class="bar-stack '+placement+'" style="height:'+heights.total+'px;--matched-height:'+heights.matched+'px">'
-   +'<i class="bar-original"></i>'+(filtering?'<i class="bar-matched"></i>':'')
-   +(monthly?'':count(total,'barcount')+(heights.matched?count(matched,'bar-match-count'):''))
-   +'</span>'+(monthly?'':'<span class="year-full">'+date+'</span><span class="year-short" aria-hidden="true">&#39;'+date.slice(-2)+'</span>')
+   +timelineBar({total,matched,peak,filtering,label:monthly?'':date,shortLabel:'&#39;'+date.slice(-2),showCounts:!monthly})
    +'</button>';
  }).join('');
  bars.querySelectorAll('[data-period]').forEach(el=>el.onclick=()=>selectPeriods(+el.dataset.period,+el.dataset.period));
@@ -751,16 +786,19 @@ function syncYears(){
   for(const [key,v] of [['aria-valuemin',min],['aria-valuemax',max],['aria-valuenow',value],['aria-valuetext',label(value)]])$(id).setAttribute(key,String(v));
  }
 }
+function fitTimelineColumns(container,width,count,monthly=false){
+ if(!width||!count)return;
+ const compact=!monthly&&(width-4*(count-1))/count<29;
+ container.classList.toggle('compact-years',compact);
+ const gap=monthly?0:compact?1:4;
+ container.style.setProperty('--count-column',String(Math.max(1,(width-gap*(count-1))/count)));
+}
 function layoutTimelineLabels(){
  const track=$('brushtrack'),width=track.getBoundingClientRect().width;
  if(!width||!periods.length)return;
  const min=+$('yearfrom').min,max=+$('yearfrom').max,count=max-min+1;
  const monthly=$('timeunit').value==='month';
- const yearBars=$('timeline-track');
- const compact=!monthly&&(width-4*(count-1))/count<29;
- yearBars.classList.toggle('compact-years',compact);
- const gap=monthly?0:compact?1:4;
- yearBars.style.setProperty('--count-column',String(Math.max(1,(width-gap*(count-1))/count)));
+ fitTimelineColumns($('timeline-track'),width,count,monthly);
  const start=$('period-start'),end=$('period-end');
  const anchor=i=>i/count*width;
  const startEdge=anchor(+$('yearfrom').value-min);

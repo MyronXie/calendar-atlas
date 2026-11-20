@@ -14,6 +14,6 @@ const february={start:new Date(2026,1,2,12)},sameMonth={start:new Date(2027,1,2,
 const outside={start:new Date(2025,11,31,12)};
 const aggregate=unit=>frequencyBuckets([outside,february,sameMonth],[february],unit,from,to);
 assert.deepEqual(aggregate('year').map(({total,matched})=>[total,matched]),[[1,1],[1,0]]);
-assert.deepEqual(aggregate('month')[1],{label:'2',title:'2月',total:2,matched:1});
+assert.deepEqual(aggregate('month')[1],{value:2,label:'2',title:'2月',total:2,matched:1});
 assert.equal(aggregate('weekday').find(row=>row.title==='星期一').matched,1);
-assert.deepEqual(aggregate('date')[1],{label:'2',title:'2号',total:2,matched:1});
+assert.deepEqual(aggregate('date')[1],{value:2,label:'2',title:'2号',total:2,matched:1});

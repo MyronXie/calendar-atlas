@@ -1,3 +1,5 @@
+import {dateBucket} from './timeline.js';
+
 const norm=s=>String(s||'').normalize('NFKC').trim().toLowerCase();
 const searchKey=s=>norm(s).normalize('NFD').replace(/(\p{Script=Latin})\p{Mark}+/gu,'$1');
 export function criterion(kind,value,extra={}){
@@ -38,8 +40,12 @@ export function matchesFilters(event,list,placeType){
   const criteria=list.filter(c=>c.kind===kind);
   if(criteria.length&&!criteria.some(c=>matchesCriterionText(c,kind,value)))return false;
  }
+ const dates=list.filter(c=>c.kind==='time');
+ for(const unit of new Set(dates.map(c=>c.scope))){
+  if(!dates.some(c=>c.scope===unit&&matchesCriterionDate(c,event.start)))return false;
+ }
  return list.every(c=>{
-  if(c.kind==='event'||c.kind==='group')return true;
+  if(c.kind==='event'||c.kind==='group'||c.kind==='time')return true;
   if(c.kind==='placeType')return event.places.some(name=>placeType?.(name)===c.value);
   if(c.kind==='place'||c.kind==='placeGroup')return event.places.some(name=>matchesCriterionText(c,'place',name));
   if(c.kind==='person')return event.partners.some(name=>matchesCriterionText(c,'person',name));
@@ -48,10 +54,13 @@ export function matchesFilters(event,list,placeType){
    .some(([kind,value])=>matchesCriterionText(c,kind,value));
  });
 }
+export function matchesCriterionDate(criterion,date){
+ return criterion.kind==='time'&&dateBucket(date,criterion.scope)===Number(criterion.value);
+}
 export function criterionDisplay(c){
  const [label,icon]=({
   event:['事件','event'],group:['组别','group'],place:['地点','place'],person:['人物','person'],
-  placeType:['类型'],placeGroup:['区域','place'],keyword:[c.scope==='note'?'备注关键词':'关键词'],
+  placeType:['类型'],placeGroup:['区域','place'],time:['日期','event'],keyword:[c.scope==='note'?'备注关键词':'关键词','search'],
  })[c.kind];
  return {label,icon,value:c.label??c.value};
 }
