@@ -1,12 +1,16 @@
-import assert from 'node:assert/strict';import {periodCounts,addMatches,barHeights,periodRange,matchedLabelPlacement,frequencyBuckets,dateConditionLabels,hourGroups,dateBucketGroups} from '../timeline.js';const es=[{start:new Date(2020,0,1)},{start:new Date(2020,1,1)},{start:new Date(2021,0,1)}];let rows=addMatches(periodCounts(es,false,2020,2021),[es[0]],false,2020);assert.deepEqual(rows,[{index:2020,total:2,matched:1},{index:2021,total:1,matched:0}]);rows=addMatches(periodCounts(es,true,2020*12,2021*12+11),[es[0]],true,2020*12);assert.equal(rows[0].matched,1);assert.equal(rows[0].total,1);assert.equal(rows[1].matched,0);assert.equal(rows[1].total,1);assert.deepEqual(barHeights(0,0,100),{total:0,matched:0});assert.equal(barHeights(1,1,10000).total,7);assert.equal(barHeights(1,1,10000).matched,7);assert.ok(barHeights(1000,1,1000).matched>82/1000);assert.ok(barHeights(1000,1,1000).matched<=82*.101);console.log('Timeline denominators, highlights and minimum heights: passed');
+import assert from 'node:assert/strict';import {periodCounts,addMatches,barHeights,periodRange,timelineCountLayout,frequencyBuckets,dateConditionGroups,hourGroups,dateBucketGroups} from '../timeline.js';const es=[{start:new Date(2020,0,1)},{start:new Date(2020,1,1)},{start:new Date(2021,0,1)}];let rows=addMatches(periodCounts(es,false,2020,2021),[es[0]],false,2020);assert.deepEqual(rows,[{index:2020,total:2,matched:1},{index:2021,total:1,matched:0}]);rows=addMatches(periodCounts(es,true,2020*12,2021*12+11),[es[0]],true,2020*12);assert.equal(rows[0].matched,1);assert.equal(rows[0].total,1);assert.equal(rows[1].matched,0);assert.equal(rows[1].total,1);assert.deepEqual(barHeights(0,0,100),{total:0,matched:0});assert.equal(barHeights(1,1,10000).total,7);assert.equal(barHeights(1,1,10000).matched,7);assert.ok(barHeights(1000,1,1000).matched>82/1000);assert.ok(barHeights(1000,1,1000).matched<=82*.101);console.log('Timeline denominators, highlights and minimum heights: passed');
 
 assert.deepEqual(periodRange(2020,2021,false),['2020-01-01','2021-12-31']);
 assert.deepEqual(periodRange(2024*12+1,2024*12+1,true),['2024-02-01','2024-02-29']);
 assert.deepEqual(periodRange(2025*12+1,2024*12+11,true),['2024-12-01','2025-02-28']);
 
-assert.equal(matchedLabelPlacement(barHeights(123,3,123)),'above');
-assert.equal(matchedLabelPlacement(barHeights(123,120,123)),'inside');
-assert.equal(matchedLabelPlacement(barHeights(1,1,123)),'raised-total');
+const large=timelineCountLayout(82,53,14);
+assert.deepEqual(large,{total:{bottom:85},hit:{bottom:16},dated:{bottom:55}});
+assert.deepEqual(timelineCountLayout(82,0,80).hit,{bottom:67,inside:true});
+const tight=timelineCountLayout(7,7,7);
+assert.ok(!tight.dated);
+assert.ok(tight.total.bottom-tight.hit.bottom>=12);
+assert.deepEqual(timelineCountLayout(70,70,70),{total:{bottom:73},hit:{bottom:57,inside:true}});
 
 const from=new Date(2026,0,1),to=new Date(2027,11,31,23,59);
 const february={start:new Date(2026,1,2,12)},sameMonth={start:new Date(2027,1,2,12)};
@@ -17,6 +21,7 @@ assert.deepEqual(aggregate('month')[1],{value:2,label:'2',title:'2月',total:2,s
 assert.equal(aggregate('weekday').find(row=>row.title==='周一').matched,1);
 assert.deepEqual(aggregate('date')[1],{value:2,label:'2',title:'2日',total:2,scoped:2,matched:1});
 
+const dateConditionLabels=criteria=>dateConditionGroups(criteria).map(group=>group.label);
 const facet=(scope,...values)=>values.map(value=>({scope,value:String(value)}));
 const span=(from,to)=>Array.from({length:to-from+1},(_,i)=>from+i);
 assert.deepEqual(dateConditionLabels([...facet('date',23),...facet('weekday',6,5),...facet('month',7),...facet('year',2012,2014)]),
@@ -38,3 +43,6 @@ assert.deepEqual(dateBucketGroups('month').map(group=>group.label),['一季度',
 assert.deepEqual(dateBucketGroups('weekday')[1].values,[5,6]);
 assert.deepEqual(dateBucketGroups('date')[2].values,span(21,31));
 assert.deepEqual(dateBucketGroups('year'),[]);
+
+assert.deepEqual(dateConditionGroups(facet('hour',...night.hours)).map(({scope,label,values})=>[scope,label,values]),
+ [['hour','深夜',[0,1,2,3,4,22,23]]]);

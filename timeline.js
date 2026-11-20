@@ -1,11 +1,29 @@
 export function periodCounts(events,monthly,min,max){const rows=Array.from({length:max-min+1},(_,i)=>({index:min+i,total:0,matched:0}));for(const e of events){const d=e.start;const i=monthly?d.getFullYear()*12+d.getMonth():d.getFullYear();if(rows[i-min])rows[i-min].total++;}return rows;}
 export function addMatches(rows,events,monthly,min,field='matched'){for(const e of events){const d=e.start;const i=monthly?d.getFullYear()*12+d.getMonth():d.getFullYear();if(rows[i-min])rows[i-min][field]=(rows[i-min][field]||0)+1;}return rows;}
 export function boostedRatio(ratio){const r=Math.max(0,Math.min(1,ratio));return Math.min(Math.pow(r,.8),r+.10);}
-export function barHeights(total,matched,peak){const height=total?Math.max(7,total/Math.max(1,peak)*82):0;const ratio=total?Math.min(1,matched/total):0;const shown=boostedRatio(ratio);return {total:height,matched:ratio?Math.min(height,Math.max(Math.min(3,height*(ratio+.10)),height*shown)):0};}
+export function barHeights(total,matched,peak,plotHeight=82){const height=total?Math.max(7,total/Math.max(1,peak)*plotHeight):0;const ratio=total?Math.min(1,matched/total):0;const shown=boostedRatio(ratio);return {total:height,matched:ratio?Math.min(height,Math.max(Math.min(3,height*(ratio+.10)),height*shown)):0};}
 
-export function matchedLabelPlacement({total,matched}){
- if(!matched||total-matched>=15)return 'above';
- return matched>=14?'inside':'raised-total';
+export function timelineCountLayout(total,dated,hit){
+ const line=12,gap=2;
+ const labels={total:{bottom:total+3}};
+ const place=(height,allowNudge)=>{
+  if(!height)return null;
+  const above=height+2,inside=height-line-1;
+  const fits=bottom=>Object.values(labels).every(label=>Math.abs(label.bottom-bottom)>=line+gap);
+  if(fits(above))return {bottom:above};
+  if(inside>=1&&fits(inside))return {bottom:inside,inside:true};
+  if(allowNudge&&labels.total.bottom-above<line+gap){
+   labels.total.bottom=Math.min(labels.total.bottom+12,above+line+gap);
+   return {bottom:above};
+  }
+  return null;
+ };
+ if(hit)labels.hit=place(hit,true);
+ if(dated){
+  const scoped=place(dated,!hit);
+  if(scoped)labels.dated=scoped;
+ }
+ return labels;
 }
 
 export function dateBucket(date,unit){
@@ -77,25 +95,30 @@ function dateRunLabel(unit,from,to){
  if(unit==='weekday')return '周'+weekdays[from]+'~'+weekdays[to];
  return from+'~'+dateBucketLabel(to,unit);
 }
-function hourConditionLabels(values){
- const hours=new Set(values),labels=[];
+function hourConditions(values){
+ const hours=new Set(values),groups=[];
  for(const group of hourGroups){
   if(!group.hours.every(hour=>hours.has(hour)))continue;
-  labels.push([group.ranges.at(-1)[0],group.label]);
+  groups.push({label:group.label,values:group.hours,sort:group.ranges.at(-1)[0]});
   for(const hour of group.hours)hours.delete(hour);
  }
- for(const [from,to] of dateRuns(hours))labels.push([from,dateRunLabel('hour',from,to)]);
- return labels.sort(([a],[b])=>a-b).map(([,label])=>label);
+ for(const [from,to] of dateRuns(hours))groups.push({
+  label:dateRunLabel('hour',from,to),values:valuesInRanges([[from,to+1]]),sort:from,
+ });
+ return groups.sort((a,b)=>a.sort-b.sort);
 }
-export function dateConditionLabels(criteria){
- return dateUnits.flatMap(unit=>{
-  const values=criteria.filter(c=>c.scope===unit).map(c=>Number(c.value));
-  if(unit==='hour')return hourConditionLabels(values);
+export function dateConditionGroups(criteria){
+ return dateUnits.flatMap(scope=>{
+  const values=criteria.filter(c=>c.scope===scope).map(c=>Number(c.value));
+  if(scope==='hour')return hourConditions(values).map(({label,values})=>({scope,label,values}));
   const runs=dateRuns(values);
   const first=runs[0],last=runs.at(-1);
-  const wrap=unit==='month'&&runs.length>1&&first[0]===1&&first[1]===2&&last[0]===12;
-  const labels=(wrap?runs.slice(1,-1):runs).map(([from,to])=>dateRunLabel(unit,from,to));
-  return wrap?[...labels,'冬季']:labels;
+  const wrap=scope==='month'&&runs.length>1&&first[0]===1&&first[1]===2&&last[0]===12;
+  const groups=(wrap?runs.slice(1,-1):runs).map(([from,to])=>({
+   scope,label:dateRunLabel(scope,from,to),values:valuesInRanges([[from,to+1]]),
+  }));
+  if(wrap)groups.push({scope,label:'冬季',values:[12,1,2]});
+  return groups;
  });
 }
 
