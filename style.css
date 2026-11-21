@@ -36,7 +36,7 @@ body.drawer-modal{position:fixed;inset:var(--drawer-scroll-offset) 0 auto;width:
 .drawertabs button,.settings-tabs button{min-width:0;padding:7px 3px;border-color:transparent;white-space:nowrap;font-size:13px}
 .drawertabs button.active,.settings-tabs button.active{background:var(--mid);color:var(--deep);font-weight:600}
 .meta-sources{margin-top:16px}
-.meta-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;min-height:44px;border-bottom:1px solid var(--line)}
+.meta-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;min-height:44px;border-bottom:1px solid var(--line);font-size:12px}
 .meta-row time,.file-settings time{display:inline-block;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .source-actions{display:flex;align-items:center;gap:4px;margin-left:auto;flex:none}
 .file-settings{position:relative;margin:16px 0}
@@ -165,10 +165,15 @@ dialog{width:520px;max-width:94vw;max-height:92vh;overflow:auto;padding:22px;bor
 .compact-tools .header-tools :is(.timeline-action,.section-action){width:32px;padding:0}
 #reset .control-icon{display:block}
 @container timeline (max-width:430px){
- #timeline-controls .unit-toggle button{padding-inline:6px}
- #focus-tools .unit-toggle button{min-width:25px;padding-inline:5px}
+ #timeline-controls .unit-toggle button{min-width:22px;padding-inline:5px}
+ #focus-tools .unit-toggle button{min-width:22px;padding-inline:4px}
  #timeline-controls .periodtools{gap:4px}
  #timeline-controls{gap:4px}
+ .timeline-mode .mode-long{display:none}
+ .timeline-mode .mode-short{display:inline}
+}
+@container timeline (max-width:360px){
+ #timeline-controls .unit-toggle button,#focus-tools .unit-toggle button{min-width:18px;padding-inline:3px;font-size:11px}
 }
 #timeline-body{container:timeline-body / inline-size}
 .timeline-range-dialog.atlas-dialog{width:380px}
@@ -456,3 +461,17 @@ body[data-color-mode=night]{color-scheme:dark;--overlay:#0009;--map-label-halo:#
 [data-color-mode=night] #mapnotice{background:#483b29;color:#fde5b1}
 [data-color-mode=night] :is(#status,#blacklist-error,#blacklist-form-error,#editerror){color:#ff9d8b}
 [data-color-mode=night] :is(.bar-match-count,.bar-date-count):not(.inside){--label-edge:var(--surface)}
+
+/* 匹配备注：宽屏放在事件下方，窄屏放在人物下方 */
+.mode-short{display:none}
+.event-note{display:flex;align-items:flex-start;gap:6px;padding:0 4px 10px 146px;font-size:12px;line-height:1.6;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}
+.event-note-icon{flex:none;margin-top:2px;color:var(--mid)}
+.event-note-narrow{display:none}
+@media(max-width:1100px){
+ .event-note-wide{display:none}
+ .event-note-narrow{display:flex;padding:0;margin-top:2px}
+}
+/* 行程底图选择 */
+#trip-provider{flex:none!important;max-width:40%;padding-inline:6px;font-size:12px}
+.pref-select{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0}
+.pref-select select{max-width:55%}
