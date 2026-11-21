@@ -2,7 +2,7 @@ import {annualLegend,cityKey,drawAnnualImage,drawAnnualMap,drawShanghaiMap,layou
 import {basemaps} from './lib/basemaps.js';
 import {periodCounts,addMatches,barHeights,timelineCountLayout,monthlyColumns,frequencyBuckets,periodRange,dateBucket,dateBucketLabel,dateConditionGroups,dateBucketGroups} from './lib/timeline.js';
 import {palettes,nightPalettes,resolveTheme,coordinateLabel,highlightLabelColor} from './lib/appearance.js';
-import {criterion,toggleCriterion,matchesFilters,matchesCriterionText,matchesCriterionDate,searchCriterion,criterionDisplay,eventParts,eventCriteria,rankSections,toggleRankHidden} from './lib/filters.js';
+import {criterion,toggleCriterion,matchesFilters,matchesCriterionText,matchesCriterionDate,searchableEventNote,searchCriterion,criterionDisplay,eventParts,eventCriteria,rankSections,toggleRankHidden} from './lib/filters.js';
 import {selectEmoji} from './lib/emoji.js';
 import {placeTypes,placeIndex,regionFromAddress} from './lib/place-categories.js';
 import {parseCalendar,expand,details,escape as E,validCoord,setPlaceResolver} from './lib/core.js';
@@ -46,10 +46,15 @@ let allCityBorders=false,cityIndexRequest,cityBoundaries=null,cityBoundaryReques
 let highlightCityProvinces=false;
 // Leaflet 1.7 can restore an animated zoom's old target after setView resets the map.
 const map=L.map('map',{preferCanvas:true,zoomAnimation:false}).setView([32,108],4);let tiles=null;let csvVersion='',editingVersion='',placeLimit=100,activePanel='manage',settingsOpen=false;let markerLayer=null,heatLayer=null,placeToggles=null,reference={places:[]},rules={},configVersion='',emojiConfig={},blacklistBusy=false,blacklistEditing=-1,blacklistEditVersion='',baseCoords=new Map(),yearMin=2000,yearMax=2026,pickMode=false;
+const observesMapSize=typeof ResizeObserver==='function';
+if(observesMapSize)new ResizeObserver(([{contentRect}])=>{
+ if(contentRect.width&&contentRect.height)map.invalidateSize({animate:false});
+}).observe($('map'));
 L.control.scale({imperial:false}).addTo(map);
 const regionLabelPane='atlas-labels';
 map.createPane(regionLabelPane);
-$('provider').innerHTML=Object.entries(basemaps).map(([key,{label}])=>'<option value="'+key+'">'+label+'</option>').join('');
+const basemapOptions=Object.entries(basemaps).map(([key,{label}])=>'<option value="'+key+'">'+E(label)+'</option>').join('');
+$('provider').innerHTML=basemapOptions;
 const savedProvider=localStorage.getItem('atlas-provider-v2');
 $('provider').value=Object.hasOwn(basemaps,savedProvider)?savedProvider:'qh360';
 const aliases={'China':'中国','Japan':'日本','South Korea':'韩国','United Kingdom':'英国','United States of America':'美国','France':'法国','Germany':'德国','Italy':'意大利','Spain':'西班牙','Thailand':'泰国','Singapore':'新加坡','Malaysia':'马来西亚','Australia':'澳大利亚','Canada':'加拿大','Indonesia':'印度尼西亚','Vietnam':'越南','New Zealand':'新西兰','Switzerland':'瑞士','Netherlands':'荷兰','Portugal':'葡萄牙','Russia':'俄罗斯','India':'印度','United Arab Emirates':'阿联酋','Philippines':'菲律宾','Cambodia':'柬埔寨','Nepal':'尼泊尔'};
@@ -320,26 +325,31 @@ function eventTitleText(title){
 }
 const entityIcon=(kind,extraClass='')=>'<svg class="entity-icon '+extraClass+'" width="16" height="16" aria-hidden="true"><use href="#icon-'+kind+'"/></svg>';
 function highlightNote(text,values){
- let out=E(text);
- for(const value of [...new Set(values)].filter(Boolean).sort((a,b)=>b.length-a.length)){
-  const needle=E(value); if(!needle)continue;
-  const pattern=needle.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-  out=out.replace(new RegExp(pattern,'gi'),match=>'<mark class="filter-highlight">'+match+'</mark>');
+ const alternatives=[...new Set(values)].filter(Boolean).sort((a,b)=>b.length-a.length)
+  .map(value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+ if(!alternatives.length)return E(text);
+ let html='',start=0;
+ for(const match of text.matchAll(new RegExp(alternatives.join('|'),'gi'))){
+  html+=E(text.slice(start,match.index))+'<mark class="filter-highlight">'+E(match[0])+'</mark>';
+  start=match.index+match[0].length;
  }
- return out;
+ return html+E(text.slice(start));
 }
-function eventEntities(names,kind,index,visible,expanded=false){
+function eventEntities(names,kind,index,visible,expanded=false,matchedNames=null){
  const isPlace=kind==='place';
  const wrapper='evententities '+(isPlace?'eventplaces':'eventpeople')+(expanded?' is-expanded':'');
  const hidden=visible?'':' hidden';
- if(!names.length)return '<div class="'+wrapper+'"'+hidden+'></div>';
- const links=names.map(name=>'<button class="entitylink'+(filterHighlights(kind,name)?' filter-highlight':'')+'" data-filter-'+kind+'="'+E(name)+'" aria-pressed="'
-  +activeCriteria.some(c=>c.id===criterion(kind,name).id)+'">'+E(name)+'</button>').join('');
+ if(!names.length)return '<div class="'+wrapper+'"'+hidden+(isPlace?' data-event-index="'+index+'"':'')+'></div>';
+ const links=names.map(name=>{
+  const matched=Boolean(matchedNames&&matchedNames.has(name));
+  return '<button class="entitylink'+(filterHighlights(kind,name)?' filter-highlight':'')+'" data-filter-'+kind+'="'+E(name)+'" aria-pressed="'
+   +activeCriteria.some(c=>c.id===criterion(kind,name).id)+'"'+(matched?' data-place-match="1"':'')+'>'+E(name)+'</button>';
+ }).join('');
  const listId=isPlace?' id="eventplaces-'+index+'"':'';
  const icon=entityIcon(kind,'event-entity-icon');
  const more=isPlace?'<button type="button" class="event-action event-places-more" data-place-toggle="'+index+'" aria-controls="eventplaces-'+index
   +'" aria-expanded="'+expanded+'" aria-label="'+(expanded?'收起地点':'展开地点')+'" title="'+(expanded?'收起地点':'展开地点')+'" hidden>'+entityIcon('chevron')+'</button>':'';
- return '<div class="'+wrapper+'"'+hidden+'>'+icon+'<div class="event-entity-list"'+listId+'>'+links+'</div>'+more+'</div>';
+ return '<div class="'+wrapper+'"'+hidden+(isPlace?' data-event-index="'+index+'"':'')+'>'+icon+'<div class="event-entity-list"'+listId+'>'+links+'</div>'+more+'</div>';
 }
 let eventLayoutFrame=0;
 function scheduleEventLayout(){
@@ -349,10 +359,20 @@ function scheduleEventLayout(){
   for(const group of $('events').querySelectorAll('.eventplaces:not([hidden])')){
    const list=group.querySelector('.event-entity-list'),button=group.querySelector('.event-places-more');
    if(!list||!button)continue;
-   const expanded=group.classList.contains('is-expanded');
+   let expanded=group.classList.contains('is-expanded');
    const twoLines=2*parseFloat(getComputedStyle(list).lineHeight);
-   button.hidden=!expanded&&list.scrollHeight<=twoLines+1;
    const bottom=list.getBoundingClientRect().top+twoLines;
+   // 仅当命中的地点被折叠（超出两行可视范围）时才自动展开；已能完整显示则保持原状
+   if(!expanded&&[...group.querySelectorAll('[data-place-match]')].some(link=>link.getBoundingClientRect().bottom>bottom+1)){
+    group.classList.add('is-expanded');
+    expanded=true;
+    const event=filtered[+group.dataset.eventIndex];
+    if(event)expandedEventPlaces.add(eventKey(event));
+    button.setAttribute('aria-expanded','true');
+    button.setAttribute('aria-label','收起地点');
+    button.title='收起地点';
+   }
+   button.hidden=!expanded&&list.scrollHeight<=twoLines+1;
    for(const link of list.children)link.inert=!expanded&&link.getBoundingClientRect().bottom>bottom+1;
   }
  });
@@ -400,22 +420,26 @@ function renderEvents(){
    +'<span class="event-weekday-wide">'+weekday+'</span></span> <span class="event-clock">'+dateField('hour',hour+':'+minute)
    +'<span class="event-weekday-narrow">'+weekday+'</span></span>';
   const trip=isTrip(event)?'<button type="button" class="event-action event-trip" data-trip-event="'+i+'" aria-label="查看行程详细" title="查看行程详细">'+entityIcon('trip')+'</button>':'';
-  // 备注关键词命中：临时显示备注，并高亮匹配词
-  const noteMatches=appliedCriteria.filter(c=>c.kind==='keyword'&&matchesCriterionText(c,'note',event.note||''));
+  // 备注关键词命中：只检查说明性文字（忽略 Partner/Place 行），命中时高亮显示
+  const noteText=searchableEventNote(event.note);
+  const noteMatches=noteText?appliedCriteria.filter(c=>c.kind==='keyword'&&matchesCriterionText(c,'note',noteText)):[];
   let noteHtml='';
   if(noteMatches.length){
-   const note=highlightNote(event.note||'',noteMatches.map(c=>c.value));
-   noteHtml='<div class="event-note"><svg class="entity-icon event-note-icon" width="14" height="14" aria-hidden="true"><use href="#icon-note"/></svg><span>'+note+'</span></div>';
+   const note=highlightNote(noteText,noteMatches.map(c=>c.value));
+   noteHtml='<div class="event-note">'+entityIcon('note','event-entity-icon')+'<span>'+note+'</span></div>';
   }
-  const noteWide=noteHtml?noteHtml.replace('class="event-note"','class="event-note event-note-wide"'):'';
-  const noteNarrow=noteHtml?noteHtml.replace('class="event-note"','class="event-note event-note-narrow"'):'';
+  // 地点命中（含关键字）：先标记，是否展开由布局测量决定，已能完整显示则不展开
+  const matchedPlaces=new Set(event.places.filter(name=>appliedCriteria.some(c=>
+   (c.kind==='place'||c.kind==='placeGroup')&&matchesCriterionText(c,'place',name)
+   ||c.kind==='placeType'&&placeType(name)===c.value
+   ||c.kind==='keyword'&&matchesCriterionText(c,'place',name))));
   return '<article class="event"><div class="eventrow"><button type="button" class="event-time" data-event-range="'+i
    +'" title="查看这段时间的事件"><time datetime="'+event.start.toISOString()+'">'+time+'</time></button>'
    +'<div class="event-details"><div class="eventname"><button class="eventtitle" data-filter-event="'+E(event.title)+'" title="按组别与事件筛选">'+eventTitleText(event.title)+'</button>'+trip+'</div>'
-   +eventEntities(event.places,'place',i,showPlaces,expandedEventPlaces.has(key))
+   +eventEntities(event.places,'place',i,showPlaces,expandedEventPlaces.has(key),matchedPlaces)
    +eventEntities(event.partners,'person',i,showPeople)
-   +noteNarrow
-   +'</div></div>'+noteWide+'</article>';
+   +noteHtml
+   +'</div></div></article>';
  }).join('')||'<div class="empty">无事件</div>';
  $('more').hidden=rows.length<=limit;
  container.querySelectorAll('[data-place-toggle]').forEach(button=>button.onclick=()=>{
@@ -820,12 +844,15 @@ for(const id of countOptionIds)$(id).onchange=()=>{
 };
 function ensureTimeline(){const key=JSON.stringify([source.length,yearMin,yearMax,$('recurring').checked,$('exclude').checked,rules,csvVersion]);if(key!==timelineKey){timelineEvents=applyRules(expand(source,new Date(yearMin,0,1),new Date(yearMax,11,31,23,59,59,999),$('recurring').checked).events,rules,$('exclude').checked,new Set()).events;timelineKey=key;}}
 function heightPreference(id,{min,max,fallback,apply}){
- const input=$(id),label=$(id+'-label'),key='atlas-'+id;
+ const input=$(id),label=$(id+'-label'),handle=$(id+'-handle'),key='atlas-'+id;
+ handle.setAttribute('aria-valuemin',String(min));
+ handle.setAttribute('aria-valuemax',String(max));
  let stored=Number(localStorage.getItem(key));
  if(!Number.isFinite(stored)||stored<min||stored>max)stored=0;
  const update=(value,customized)=>{
   input.value=String(value);
   label.textContent=value+' px';
+  handle.setAttribute('aria-valuenow',String(value));
   apply(value,customized);
  };
  update(stored||fallback(),Boolean(stored));
@@ -834,7 +861,45 @@ function heightPreference(id,{min,max,fallback,apply}){
   stored=Number(input.value);
   localStorage.setItem(key,String(stored));
  };
+ setupPanelHeightHandle(handle,input);
  return ()=>{if(!stored)update(fallback(),false);};
+}
+function setupPanelHeightHandle(handle,input){
+ let drag;
+ const setValue=value=>{
+  const previous=input.value;
+  input.value=String(value);
+  if(input.value===previous)return false;
+  input.dispatchEvent(new Event('input',{bubbles:true}));
+  return true;
+ };
+ const save=()=>input.dispatchEvent(new Event('change',{bubbles:true}));
+ handle.addEventListener('pointerdown',event=>{
+  if(drag||!event.isPrimary||event.button!==0)return;
+  drag={id:event.pointerId,y:event.clientY,height:Number(input.value),changed:false};
+  handle.focus({preventScroll:true});
+  handle.setPointerCapture(event.pointerId);
+  document.body.classList.add('height-dragging');
+  event.preventDefault();
+ });
+ globalThis.addEventListener?.('pointermove',event=>{
+  if(event.pointerId!==drag?.id)return;
+  if(setValue(drag.height+event.clientY-drag.y))drag.changed=true;
+ });
+ const stop=event=>{
+  if(event.pointerId!==drag?.id)return;
+  if(drag.changed)save();
+  drag=null;
+  document.body.classList.remove('height-dragging');
+ };
+ globalThis.addEventListener?.('pointerup',stop);
+ globalThis.addEventListener?.('pointercancel',stop);
+ handle.addEventListener('keydown',event=>{
+  if(event.key!=='ArrowUp'&&event.key!=='ArrowDown')return;
+  event.preventDefault();
+  const step=Number(input.step);
+  if(setValue(Number(input.value)+(event.key==='ArrowDown'?step:-step)))save();
+ });
 }
 let chartHeight;
 heightPreference('timeline-height',{
@@ -861,7 +926,7 @@ const syncMapHeight=heightPreference('map-height',{
  min:170,max:800,fallback:defaultMapHeight,
  apply(value,customized){
   document.body.style.setProperty('--map-height',customized?value+'px':'');
-  if(!$('map-body').hidden)map.invalidateSize({pan:false});
+  if(!observesMapSize&&!$('map-body').hidden)map.invalidateSize({animate:false});
  },
 });
 globalThis.addEventListener?.('resize',syncMapHeight,{passive:true});
@@ -1000,11 +1065,28 @@ function fitSectionTools(){
  for(const id of ['timeline-header','map-header']){
   const header=$(id),title=header.querySelector('.header-title'),tools=header.querySelector('.header-tools');
   if(!title||!tools||tools.hidden)continue;
-  header.classList.remove('compact-tools');
   const style=getComputedStyle(header);
-  const available=header.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
-  const desired=title.getBoundingClientRect().width+tools.getBoundingClientRect().width+parseFloat(style.columnGap);
-  header.classList.toggle('compact-tools',desired>available+.5);
+  const available=header.getBoundingClientRect().width-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
+  const remaining=available-title.getBoundingClientRect().width-parseFloat(style.columnGap);
+  if(id==='timeline-header'){
+   header.classList.remove('tools-on-next-line');
+   header.classList.add('measuring-tools');
+   const fit=width=>{
+    delete header.dataset.toolSize;
+    for(const size of ['icons','short','compact','narrow','tight']){
+     if(tools.getBoundingClientRect().width<=width)return true;
+     header.dataset.toolSize=size;
+    }
+    return tools.getBoundingClientRect().width<=width;
+   };
+   const fitsBesideTitle=fit(remaining);
+   if(!fitsBesideTitle)fit(available);
+   header.classList.remove('measuring-tools');
+   header.classList.toggle('tools-on-next-line',!fitsBesideTitle);
+  }else{
+   header.classList.remove('compact-tools');
+   header.classList.toggle('compact-tools',tools.getBoundingClientRect().width>remaining+.5);
+  }
  }
 }
 if(typeof ResizeObserver==='function'){
@@ -1375,8 +1457,63 @@ const overlayDrawers=typeof matchMedia==='function'?matchMedia('(max-width:650px
 let rankDrawerOpen=true, lastOpenedDrawer='rank', drawerResizeTimer, drawerScrollPosition=null;
 function updateDrawerLayout(){
  syncDrawerOverlay();
- clearTimeout(drawerResizeTimer);
- drawerResizeTimer=setTimeout(()=>map.invalidateSize(),180);
+ if(!observesMapSize){
+  clearTimeout(drawerResizeTimer);
+  drawerResizeTimer=setTimeout(()=>map.invalidateSize(),180);
+ }
+}
+// 双栏分割条：可拖动调整时间/事件宽度；不持久化，单屏↔双屏切换后恢复平分
+function setupSplitter(){
+ const panel=document.querySelector('.home-panels'),handle=$('home-splitter'),mainEl=document.querySelector('main');
+ if(!panel||!handle)return;
+ const overview=panel.querySelector('.home-overview');
+ let splitActive=false,pointerId=null,grabOffset=0;
+ const stop=()=>{pointerId=null;document.body.classList.remove('split-dragging');};
+ const update=()=>{
+  const active=getComputedStyle(panel).display==='grid';
+  if(active===splitActive)return;
+  splitActive=active;
+  if(!active){
+   stop();
+   panel.style.removeProperty('--split-left');
+  }
+ };
+ const syncGutter=()=>panel.style.setProperty('--overview-scrollbar',(overview.offsetWidth-overview.clientWidth)+'px');
+ if(typeof ResizeObserver==='function'){
+  new ResizeObserver(update).observe(mainEl);
+  new ResizeObserver(syncGutter).observe(overview);
+ }
+ syncGutter();
+ window.addEventListener('resize',update);update();
+ const setLeft=clientX=>{
+  const rect=panel.getBoundingClientRect();
+  const minimum=parseFloat(getComputedStyle(panel).getPropertyValue('--split-min'));
+  const left=Math.max(minimum,Math.min(rect.width-minimum-handle.offsetWidth,clientX-rect.left));
+  panel.style.setProperty('--split-left','min('+left+'px, calc(100% - var(--split-min) - var(--split-handle)))');
+ };
+ handle.addEventListener('pointerdown',event=>{
+  if(!splitActive||pointerId!==null||event.button!==0)return;
+  pointerId=event.pointerId;
+  grabOffset=event.clientX-handle.getBoundingClientRect().left;
+  handle.focus({preventScroll:true});
+  handle.setPointerCapture(pointerId);
+  document.body.classList.add('split-dragging');event.preventDefault();
+ });
+ window.addEventListener('pointermove',event=>{
+  if(event.pointerId!==pointerId)return;
+  if(event.buttons)setLeft(event.clientX-grabOffset);
+  else stop();
+ });
+ const stopPointer=event=>{if(event.pointerId===pointerId)stop();};
+ window.addEventListener('pointerup',stopPointer);
+ window.addEventListener('pointercancel',stopPointer);
+ window.addEventListener('blur',stop);
+ handle.addEventListener('keydown',event=>{
+  if(!splitActive||!['ArrowLeft','ArrowRight'].includes(event.key))return;
+  event.preventDefault();
+  const current=handle.getBoundingClientRect().left;
+  setLeft(current+(event.key==='ArrowRight'?24:-24));
+ });
 }
 function drawer(open,restoreFocus=true){
  if(open&&narrowDrawers?.matches&&settingsOpen)settingsDrawer(false,false);
@@ -1746,27 +1883,24 @@ let tripExportMap,tripExportTiles,tripExportRoutes;
 const tripExportSize=420;
 let tripLinesEnabled=true;
 const tripColors=['#3d664e','#315987','#874939','#695087','#856020','#2e6a71'];
-const tripProviderKey=()=>basemaps[localStorage.getItem('atlas-trip-provider')]?localStorage.getItem('atlas-trip-provider'):'osm';
-function fillTripProvider(select){
- if(!select)return;
- select.innerHTML=Object.entries(basemaps).map(([key,value])=>'<option value="'+key+'">'+E(value.label)+'</option>').join('');
- select.value=tripProviderKey();
+function tripProviderKey(){
+ const stored=localStorage.getItem('atlas-trip-provider');
+ return Object.hasOwn(basemaps,stored)?stored:'osm';
 }
 function setTripProvider(key){
- if(!basemaps[key])key='osm';
+ if(!Object.hasOwn(basemaps,key))key='osm';
  localStorage.setItem('atlas-trip-provider',key);
- for(const id of ['trip-provider','trip-provider-pref']){const select=$(id);if(select)select.value=key;}
+ $('trip-provider-pref').value=key;
  if(!tripMap)return;
  if(tripTileLayer)tripMap.removeLayer(tripTileLayer);
  const {url,options}=basemaps[key];
  tripTileLayer=L.tileLayer(url,{maxZoom:18,...options}).addTo(tripMap);
 }
-function setupTripProviders(){
- for(const id of ['trip-provider','trip-provider-pref']){
-  const select=$(id); if(!select)continue;
-  fillTripProvider(select);
-  select.onchange=()=>setTripProvider(select.value);
- }
+function setupTripProvider(){
+ const select=$('trip-provider-pref');
+ select.innerHTML=basemapOptions;
+ select.value=tripProviderKey();
+ select.onchange=()=>setTripProvider(select.value);
 }
 function tripDayLabel(day){
  if(day.number===null)return day.label;
@@ -2011,7 +2145,8 @@ $('trip-dialog').onclose=()=>{
  if(tripMap)tripMap.remove();
  tripMap=tripMarkers=tripRoutes=tripLayerControl=tripShareData=tripTileLayer=null;
 };
-setupTripProviders();
+setupTripProvider();
+setupSplitter();
 const reviewDateFormat=date=>date.getFullYear()+'年'+(date.getMonth()+1)+'月'+date.getDate()+'日';
 function reviewPeriod(from,to,custom){
  const start=new Date(from+'T00:00:00'),end=new Date(to+'T23:59:59.999');
