@@ -2,7 +2,7 @@ import {runtimeCalendar} from './fixtures/runtime-calendar.mjs';
 import {fileURLToPath} from 'node:url';
 const fixtures=new URL('./fixtures/',import.meta.url);
 import fs from 'node:fs/promises';import assert from 'node:assert/strict';import {parseCSV} from '../server/csv-store.mjs';
-class Element{constructor(){this.value='';this.checked=true;this.style={setProperty(name,value){this[name]=value;}};this.classList={toggle(){},add(){},remove(){}};this.children=[];this.dataset={};this.elements={};this.min=0;this.max=0;}set innerHTML(s){this.html=s;this.queryCache={};}get innerHTML(){return this.html||'';}querySelectorAll(selector){if(!['[data-period]','[data-frequency-bucket]','[data-remove-date]','[data-event-range]','[data-filter-place]','[data-filter-person]','[data-rank-name]','[data-edit-rank]','[data-rank-eye]','[data-edit]','[data-filter-event]','[data-remove-filter]','[data-rule-toggle]','[data-rule-delete]','[data-rule-edit]','[data-theme-choice]'].includes(selector))return [];this.queryCache||={};if(this.queryCache[selector])return this.queryCache[selector];const attr=selector.slice(1,-1),key=attr.slice(5).replace(/-([a-z])/g,(_,x)=>x.toUpperCase());const decode=x=>x.replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');return this.queryCache[selector]=[...this.innerHTML.matchAll(new RegExp(attr+'="([^"]*)"','g'))].map(m=>{const el=new Element();el.dataset[key]=decode(m[1]);return el;});}querySelector(){return null;}showModal(){this.open=true;}close(){this.open=false;}setAttribute(k,v){this.attributes||={};this.attributes[k]=v;}addEventListener(type,handler){this.listeners||={};this.listeners[type]=handler;}setPointerCapture(){}getBoundingClientRect(){return {width:900,height:490,left:0,top:0};}}
+class Element{constructor(){this.value='';this.checked=true;this.style={setProperty(name,value){this[name]=value;}};this.classList={toggle(){},add(){},remove(){}};this.children=[];this.dataset={};this.elements={};this.min=0;this.max=0;}set innerHTML(s){this.html=s;this.queryCache={};}get innerHTML(){return this.html||'';}querySelectorAll(selector){if(!['[data-period]','[data-frequency-bucket]','[data-remove-date]','[data-event-range]','[data-filter-place]','[data-filter-person]','[data-rank-name]','[data-edit-rank]','[data-rank-toggle]','[data-edit]','[data-filter-event]','[data-remove-filter]','[data-rule-toggle]','[data-rule-delete]','[data-rule-edit]','[data-theme-choice]'].includes(selector))return [];this.queryCache||={};if(this.queryCache[selector])return this.queryCache[selector];const attr=selector.slice(1,-1),key=attr.slice(5).replace(/-([a-z])/g,(_,x)=>x.toUpperCase());const decode=x=>x.replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');return this.queryCache[selector]=[...this.innerHTML.matchAll(new RegExp(attr+'="([^"]*)"','g'))].map(m=>{const el=new Element();el.dataset[key]=decode(m[1]);return el;});}querySelector(){return null;}showModal(){this.open=true;}close(){this.open=false;}setAttribute(k,v){this.attributes||={};this.attributes[k]=v;}addEventListener(type,handler){this.listeners||={};this.listeners[type]=handler;}setPointerCapture(){}getBoundingClientRect(){return {width:900,height:490,left:0,top:0};}}
 const shanghaiInputs=['metro','roads','boundaries','landmarks'].map(name=>Object.assign(new Element(),{name}));
 const shanghaiControl=new Element();
 const placeInputs=['heatmap','aggregate'].map(name=>Object.assign(new Element(),{name}));
@@ -93,19 +93,19 @@ el('timeline-all').onclick();assert.ok(el('timeline-range-indicator').hidden);el
 for(const tab of rankTabs){
  tab.onclick();const pane=els.get('ranking'),before=pane.querySelectorAll('[data-rank-name]').map(e=>e.dataset.rankName);assert(before.length>0);const name=before[0],original=pane.innerHTML;
  const criteria=els.get('activefilters').innerHTML;
- pane.querySelectorAll('[data-rank-eye]')[0].onclick({stopPropagation(){}});
- assert(pane.innerHTML.includes('rank-divider'));assert.equal(pane.querySelectorAll('[data-rank-name]').at(-1).dataset.rankName,name);assert.equal(els.get('activefilters').innerHTML,criteria);
+ pane.querySelectorAll('[data-rank-toggle]')[0].onclick();
+ assert(pane.innerHTML.includes('class="rank-divider">不参与排名'));assert.equal(pane.querySelectorAll('[data-rank-name]').at(-1).dataset.rankName,name);assert.equal(els.get('activefilters').innerHTML,criteria);
  const getCounts=html=>[...html.matchAll(/data-rank-name="([^"]*)"[\s\S]*?<b>(\d+)<\/b>/g)].map(m=>m[1]+'='+m[2]).sort();
  assert.deepEqual(getCounts(pane.innerHTML),getCounts(original));
  const stored=JSON.parse(savedStorage.get('atlas-rank-hidden-v1'));assert.equal(stored[tab.dataset.tab].length,1);
- pane.querySelectorAll('[data-rank-eye]').find(e=>e.dataset.rankEye===name).onclick({stopPropagation(){}});
+ pane.querySelectorAll('[data-rank-toggle]').find(e=>e.dataset.rankToggle===name).onclick();
  assert.deepEqual(pane.querySelectorAll('[data-rank-name]').map(e=>e.dataset.rankName),before);assert(!pane.innerHTML.includes('rank-divider'));
 }
 assert(!html.includes('id="editname"'));assert(!html.includes('name="emoji"'));
 rankTabs[0].onclick();const gear=els.get('ranking').querySelectorAll('[data-edit-rank]')[0];assert(!gear);
 const editor=els.get('editform');assert(!Object.hasOwn(editor.elements,'emoji'));editor.elements.address.value='上海市闵行区测试地址';for(const k of ['country','province','city'])editor.elements[k].value='';
 editor.elements.address.listeners.input();assert.equal(editor.elements.country.value,'中国');assert.equal(editor.elements.province.value,'上海市');assert.equal(editor.elements.city.value,'上海市');editor.elements.city.value='自定义城市';editor.elements.city.listeners.input();editor.elements.address.value='江苏省苏州市姑苏区测试地址';editor.elements.address.listeners.input();assert.equal(editor.elements.province.value,'江苏省');assert.equal(editor.elements.city.value,'自定义城市');
-console.log('All three rank eye controls, separator, counts, persistence, restoration and single-name editor: passed');
+console.log('All three ranking number controls, separator, counts, persistence, restoration and single-name editor: passed');
 
 const annualContext=new Proxy({measureText:text=>({width:String(text).length*12})},{get:(ctx,key)=>ctx[key]??(()=>{})});
 for(const id of ['annual-map','annual-shanghai-map']){
