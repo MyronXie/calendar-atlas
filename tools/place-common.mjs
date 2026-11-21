@@ -16,7 +16,7 @@ export const coreSim = (a, b) => { const ca = core(a), cb = core(b); const L = M
 const R = Math.PI / 180; export const dist = (a, b) => Math.round(Math.hypot((a[0] - b[0]) * R * Math.cos((a[1] + b[1]) / 2 * R), (a[1] - b[1]) * R) * 6371000);
 let lastA = 0, lastB = 0;
 export async function amapText(keyword, adcode) {
-  if (!KEY) throw Error('NO AMAP_KEY');
+  if (!KEY) return [];
   const d = 340 - (Date.now() - lastA); if (d > 0) await new Promise(r => setTimeout(r, d)); lastA = Date.now();
   const base = `https://restapi.amap.com/v3/place/text?key=${KEY}&keywords=${encodeURIComponent(keyword)}&offset=10&page=1&extensions=all`;
   for (const suf of [adcode ? `&city=${adcode}&citylimit=true` : null, '']) {
@@ -74,4 +74,27 @@ export async function photonReverse(lat, lon) {
 }
 export async function photonSearch(q) {
   try { const r = await fetch('https://photon.komoot.io/api/?q=' + encodeURIComponent(q) + '&limit=5', { signal: AbortSignal.timeout(12000), headers: PHH }); const j = await r.json(); return (j.features || []).map(f => { const [lon, lat] = f.geometry.coordinates; return { name: f.properties?.name || '', cc: f.properties?.countrycode || '', osm: (f.properties?.osm_key || '') + '/' + (f.properties?.osm_value || ''), lat, lon }; }); } catch { return []; }
+}
+
+// OpenStreetMap Nominatim（免费，需遵守 1 req/s 与 UA 政策）
+const NOMINATIM_HEADERS = {'User-Agent': 'calendar-atlas/1.0 (local-place-testing)'};
+let lastNominatim = 0;
+async function nominatimFetch(url) {
+ const d = 1100 - (Date.now() - lastNominatim); if (d > 0) await new Promise(r => setTimeout(r, d)); lastNominatim = Date.now();
+ const res = await fetch(url, {headers: NOMINATIM_HEADERS, signal: AbortSignal.timeout(15000)});
+ if (!res.ok) return null;
+ return res.json();
+}
+export async function nominatimSearch(q) {
+ try {
+  const j = await nominatimFetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&accept-language=zh-CN&addressdetails=1&namedetails=1&q=' + encodeURIComponent(q));
+  return (j || []).map(x => ({name: x.name || x.namedetails?.name || String(x.display_name || '').split(',')[0], display: x.display_name || '', lat: +x.lat, lon: +x.lon, type: x.type || '', importance: x.importance || 0}));
+ } catch { return []; }
+}
+export async function nominatimReverse(lat, lon) {
+ try {
+  const j = await nominatimFetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=18&accept-language=zh-CN&addressdetails=1&namedetails=1`);
+  if (!j) return null;
+  return {name: j.name || j.namedetails?.name || String(j.display_name || '').split(',')[0], display: j.display_name || '', lat: +j.lat, lon: +j.lon, type: j.type || ''};
+ } catch { return null; }
 }
