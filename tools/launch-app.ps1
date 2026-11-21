@@ -1,7 +1,7 @@
 param([switch]$NoBrowser)
 $ErrorActionPreference='Stop'
 $atlasRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$atlasServer=Join-Path $atlasRoot 'server.mjs'
+$atlasServer=Join-Path $atlasRoot 'server/server.mjs'
 $atlasUrl='http://127.0.0.1:8787/'
 function Test-AtlasService {try{$atlasInfo=Invoke-RestMethod -Uri ($atlasUrl+'api/health') -TimeoutSec 2;return $atlasInfo.app -eq 'calendar-atlas'}catch{return $false}}
 if(-not(Test-AtlasService)){

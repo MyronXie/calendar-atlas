@@ -1,16 +1,16 @@
 // Flow 1: read updated calendar, match with place (location+aliases); for unmatched, map-verify and
 // produce an MD report + decision CSV. Does NOT modify place.csv.
-// Usage: AMAP_KEY=xxx node tools/place-sync.mjs [--out reports/..md] [--decisions reports/..csv]
+// Usage: AMAP_KEY=xxx node tools/place-sync.mjs [--out temps/..md] [--decisions temps/..csv]
 import fs from 'node:fs/promises';
-import {atlasDataDirectory} from '../atlas-data.mjs';
+import {atlasDataDirectory} from '../server/atlas-data.mjs';
 import ICAL from '../vendor/ical.min.js';
-import {details} from '../core.js';
+import {details} from '../lib/core.js';
 import {norm, coreSim, amapText, baiduText, loadPlaces, fmtKey, todayStr, rootURL} from './place-common.mjs';
-import {stringifyCSV} from '../csv-store.mjs';
+import {stringifyCSV} from '../server/csv-store.mjs';
 const argv = process.argv.slice(2); const arg = (n, d) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : d; };
 const key = todayStr().replace(/\//g, '');
-const OUT = arg('--out', `reports/日历地点同步报告_${key}.md`);
-const DEC = arg('--decisions', `reports/日历地点同步_决策_${key}.csv`);
+const OUT = arg('--out', `temps/日历地点同步报告_${key}.md`);
+const DEC = arg('--decisions', `temps/日历地点同步_决策_${key}.csv`);
 const icsFile = arg('--ics');
 const calendar = icsFile?new URL(icsFile,rootURL):new URL('calendar.ics',atlasDataDirectory());
 const comp = new ICAL.Component(ICAL.parse(await fs.readFile(calendar, 'utf8')));

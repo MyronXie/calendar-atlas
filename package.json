@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.mjs",
+    "start": "node server/server.mjs",
     "test": "node tests/run.mjs",
     "audit": "node tools/audit-calendar.mjs",
+    "clean:calendar": "node tools/clean-calendar.mjs",
     "sync": "node tools/place-sync.mjs",
     "verify": "node tools/place-verify.mjs",
     "apply": "node tools/place-apply.mjs",

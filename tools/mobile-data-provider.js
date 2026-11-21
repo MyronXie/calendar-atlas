@@ -1,5 +1,5 @@
-import {parseCalendar} from './core.js';
-import {parseAtlasConfig,parseCSV} from './data-formats.js';
+import {parseCalendar} from './lib/core.js';
+import {parseAtlasConfig,parseCSV} from './lib/data-formats.js';
 
 const importing=document.documentElement.dataset.mobileSource==='import';
 document.documentElement.dataset.mobile='1';

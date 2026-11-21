@@ -1,13 +1,14 @@
 // Shared helpers for place workflows (Amap + Baidu + matching).
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
-import {atlasDataDirectory} from '../atlas-data.mjs';
+import {atlasDataDirectory} from '../server/atlas-data.mjs';
 import {fileURLToPath} from 'node:url';
-import {parseCSV, stringifyCSV} from '../csv-store.mjs';
+import {parseCSV, stringifyCSV} from '../server/csv-store.mjs';
 const root = new URL('../', import.meta.url);
 const gctx = {}; vm.runInNewContext(await fs.readFile(new URL('vendor/gcoord.global.prod.js', root), 'utf8'), gctx); const gc = gctx.gcoord;
 export const KEY = process.env.AMAP_KEY || '';
-export const norm = s => String(s || '').normalize('NFKC').toLowerCase().replace(/[\p{P}\p{S}\s]/gu, '');
+import {loose as norm} from '../lib/place-name.js';
+export {norm};
 export const core = s => norm(String(s).split(/[（(]/)[0]);
 export const branchOf = s => { const m = String(s).match(/[（(]([^）)]+)[）)]\s*$/); return m ? norm(m[1]) : ''; };
 const lcsub = (a, b) => { if (!a || !b) return 0; const m = a.length, n = b.length; let dp = new Array(n + 1).fill(0), best = 0; for (let i = 1; i <= m; i++) { let prev = 0; for (let j = 1; j <= n; j++) { const t = dp[j]; if (a[i - 1] === b[j - 1]) { dp[j] = prev + 1; if (dp[j] > best) best = dp[j]; } else dp[j] = 0; prev = t; } } return best; };

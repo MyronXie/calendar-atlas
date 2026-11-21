@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {isPlaceExcluded,applyRules} from '../organize.js';
+import {isPlaceExcluded,applyRules} from '../lib/organize.js';
 const rules={placeRules:[{enabled:'1',match_type:'contains',value:'教学楼'},{enabled:'1',match_type:'exact',value:'旧教室'},{enabled:'0',match_type:'contains',value:'公园'}],eventRules:[{enabled:'1',match_type:'contains',value:'上课'}]};
 assert(isPlaceExcluded({location:'报告厅',address:'某教学楼二楼'},rules));
 assert(isPlaceExcluded({location:'新名称',aliases:'旧教室；其他别名'},rules));

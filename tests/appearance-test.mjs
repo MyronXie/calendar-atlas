@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {coordinateLabel,resolveTheme,palettes,nightPalettes} from '../appearance.js';
+import {coordinateLabel,resolveTheme,palettes,nightPalettes} from '../lib/appearance.js';
 
 assert.equal(coordinateLabel({lat:31.114,lon:131.224}),'31.114°N,131.224°E');
 assert.equal(coordinateLabel({lat:-31.114,lon:-131.224}),'31.114°S,131.224°W');

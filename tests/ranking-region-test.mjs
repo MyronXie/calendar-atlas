@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {rankSections,toggleRankHidden} from '../filters.js';
-import {regionFromAddress} from '../place-categories.js';
+import {rankSections,toggleRankHidden} from '../lib/filters.js';
+import {regionFromAddress} from '../lib/place-categories.js';
 const rows=[['A',12],['B',8],['C',3]],original=JSON.stringify(rows);
 let hidden=toggleRankHidden([],' A ');assert.deepEqual(rankSections(rows,hidden),{visible:[['B',8],['C',3]],hidden:[['A',12]]});
 hidden=toggleRankHidden(hidden,'A');assert.deepEqual(rankSections(rows,hidden).visible,rows);assert.equal(JSON.stringify(rows),original);

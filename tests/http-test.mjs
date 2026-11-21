@@ -17,8 +17,8 @@ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'atlas-http-test-'));
 const places=path.join(dir,'synthetic-places.csv');
 const calendar=path.join(dir,'calendar.ics');
 await fs.writeFile(places,'location,lat,lon\r\n');
-await fs.copyFile(new URL('./fixture.ics',import.meta.url),calendar);
-const child=spawn(process.execPath,[fileURLToPath(new URL('../server.mjs',import.meta.url))],{
+await fs.copyFile(new URL('./fixtures/fixture.ics',import.meta.url),calendar);
+const child=spawn(process.execPath,[fileURLToPath(new URL('../server/server.mjs',import.meta.url))],{
  env:{...process.env,PORT:String(port),PLACES_PATH:places,CALENDAR_PATH:calendar},
  stdio:['ignore','ignore','pipe'],
 });
@@ -71,7 +71,7 @@ try{
   appVersion='<a href="https://github.com/MyronXie/calendar-atlas/commit/'+commit
    +'" target="_blank" rel="noopener noreferrer">'+short+'</a> ('+date.slice(0,16).replaceAll('-','/')+')';
  }catch{}
- for(const route of ['/','/index.html','/app.js','/basemaps.js','/core.js','/organize.js','/vendor/leaflet.js','/style.css','/api/calendar']){
+ for(const route of ['/','/index.html','/app.js','/lib/basemaps.js','/lib/core.js','/lib/organize.js','/vendor/leaflet.js','/style.css','/api/calendar']){
   const response=await request(route);
   assert.equal(response.status,200,route);
   if(route==='/'||route==='/index.html')assert.ok((await response.text()).includes('<output id="app-version">'+appVersion+'</output>'));

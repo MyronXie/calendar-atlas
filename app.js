@@ -1,14 +1,16 @@
-import {annualLegend,cityKey,drawAnnualImage,drawAnnualMap,drawShanghaiMap,layoutMapLabels,mapAttribution,shanghaiDistricts,shanghaiMapPlaces,shanghaiMetroLayers,shanghaiName} from './annual-review.js';
-import {basemaps} from './basemaps.js';
-import {periodCounts,addMatches,barHeights,timelineCountLayout,monthlyColumns,frequencyBuckets,periodRange,dateBucket,dateBucketLabel,dateConditionGroups,dateBucketGroups} from './timeline.js';
-import {palettes,nightPalettes,resolveTheme,coordinateLabel,highlightLabelColor} from './appearance.js';
-import {criterion,toggleCriterion,matchesFilters,matchesCriterionText,matchesCriterionDate,searchCriterion,criterionDisplay,eventParts,eventCriteria,rankSections,toggleRankHidden} from './filters.js';
-import {selectEmoji} from './emoji.js';
-import {placeTypes,placeIndex,regionFromAddress} from './place-categories.js';
-import {parseCalendar,expand,details,escape as E,validCoord} from './core.js';
-import {applyRules,gcjToWgs,normalizePlace,isPlaceExcluded,shortRegionName,geometryPolygons,containsPoint} from './organize.js';
-import {compareCalendars} from './calendar-import.js';
-import {isTrip,occurrenceCounts,occurrenceDays,tripDates,tripDateRange,tripDetails,tripPlace,tripSelectLabel,tripShareFilename} from './travel.js';
+import {annualLegend,cityKey,drawAnnualImage,drawAnnualMap,drawShanghaiMap,layoutMapLabels,mapAttribution,shanghaiDistricts,shanghaiMapPlaces,shanghaiMetroLayers,shanghaiName} from './lib/annual-review.js';
+import {basemaps} from './lib/basemaps.js';
+import {periodCounts,addMatches,barHeights,timelineCountLayout,monthlyColumns,frequencyBuckets,periodRange,dateBucket,dateBucketLabel,dateConditionGroups,dateBucketGroups} from './lib/timeline.js';
+import {palettes,nightPalettes,resolveTheme,coordinateLabel,highlightLabelColor} from './lib/appearance.js';
+import {criterion,toggleCriterion,matchesFilters,matchesCriterionText,matchesCriterionDate,searchCriterion,criterionDisplay,eventParts,eventCriteria,rankSections,toggleRankHidden} from './lib/filters.js';
+import {selectEmoji} from './lib/emoji.js';
+import {placeTypes,placeIndex,regionFromAddress} from './lib/place-categories.js';
+import {parseCalendar,expand,details,escape as E,validCoord} from './lib/core.js';
+import {applyRules,normalizePlace,isPlaceExcluded} from './lib/organize.js';
+import {gcjToWgs,shortRegionName,geometryPolygons,containsPoint} from './lib/geo.js';
+import {compareCalendars} from './lib/calendar-import.js';
+import {isTrip,occurrenceCounts,occurrenceDays,tripDates,tripDateRange,tripDetails,tripPlace,tripSelectLabel,tripShareFilename} from './lib/travel.js';
+import {compact as normalize} from './lib/place-name.js';
 const sourceTimeIds = {calendar:'cal-version', places:'place-version', blacklist:'blacklist-version'};
 const mobileSource=document.documentElement?.dataset?.mobileSource;
 const mobileImport=mobileSource==='import';
@@ -51,7 +53,7 @@ $('provider').innerHTML=Object.entries(basemaps).map(([key,{label}])=>'<option v
 const savedProvider=localStorage.getItem('atlas-provider-v2');
 $('provider').value=Object.hasOwn(basemaps,savedProvider)?savedProvider:'qh360';
 const aliases={'China':'中国','Japan':'日本','South Korea':'韩国','United Kingdom':'英国','United States of America':'美国','France':'法国','Germany':'德国','Italy':'意大利','Spain':'西班牙','Thailand':'泰国','Singapore':'新加坡','Malaysia':'马来西亚','Australia':'澳大利亚','Canada':'加拿大','Indonesia':'印度尼西亚','Vietnam':'越南','New Zealand':'新西兰','Switzerland':'瑞士','Netherlands':'荷兰','Portugal':'葡萄牙','Russia':'俄罗斯','India':'印度','United Arab Emirates':'阿联酋','Philippines':'菲律宾','Cambodia':'柬埔寨','Nepal':'尼泊尔'};
-let gaz=[];const normalize=s=>s.toLowerCase().replace(/\s+/g,'');
+let gaz=[];
 function setupGaz(){gaz=[];for(const f of world?.features||[]){const p=f.properties;const name=p.name||p.ADMIN||p.NAME;const coords=geometryPolygons(f.geometry).flat(2);let xs=coords.map(p=>p[0]),ys=coords.map(p=>p[1]);gaz.push({terms:[name,aliases[name]].filter(Boolean),country:aliases[name]||name,lat:(Math.min(...ys)+Math.max(...ys))/2,lon:(Math.min(...xs)+Math.max(...xs))/2,precision:'country'});}for(const f of china?.features||[]){const p=f.properties;gaz.push({terms:[p.name,p.name.replace(/省|市|壮族自治区|回族自治区|维吾尔自治区|自治区|特别行政区/g,'')],country:'中国',province:p.name,city:['北京市','上海市','天津市','重庆市','香港特别行政区','澳门特别行政区'].includes(p.name)?p.name:'',lat:p.center?.[1],lon:p.center?.[0],precision:'province'});}for(const p of cities){gaz.push({terms:[p.name,p.name.replace(/市$/,'')],country:'中国',province:p.province,city:p.name,lat:p.center[1],lon:p.center[0],precision:'city'});}gaz=gaz.filter(p=>validCoord(p));}
 function locate(name){const m=name.match(/(?:geo:)?(-?\d{1,2}\.\d{3,})\s*[,，;]\s*(-?\d{1,3}\.\d{3,})/i);if(m&&validCoord({lat:m[1],lon:m[2]}))return {...inferRegion(+m[1],+m[2]),lat:+m[1],lon:+m[2],precision:'exact'};const key=normalizePlace(name);const base=baseCoords.get(key);if(base){if(!validCoord(base)){const approx=lookup([base.city,base.province,base.country].filter(Boolean).join(' '))||lookup(name);return approx?{...approx,...Object.fromEntries(['country','province','city'].filter(k=>base[k]).map(k=>[k,base[k]]))}:null;}let p={lat:Number(base.lat),lon:Number(base.lon),precision:'exact'};[p.lat,p.lon]=toWgs(p.lat,p.lon,base.datum||$('datum').value);const inferred=base.country&&base.province&&base.city?{}:inferRegion(p.lat,p.lon);return {...inferred,...Object.fromEntries(['country','province','city'].filter(k=>base[k]).map(k=>[k,base[k]])),...p};}return lookup(name);}
 function lookup(name){const s=normalize(name);let hits=gaz.filter(p=>p.terms.some(t=>{if(!t||t.length<2)return false;const term=normalize(t);if(s===term)return true;const official=/省$|市$|区$|县$|自治区$|特别行政区$/.test(t);return official&&s.startsWith(term);}));hits.sort((a,b)=>({city:3,province:2,country:1}[b.precision]-{city:3,province:2,country:1}[a.precision]));if(!hits.length)return null;const best=hits[0],peers=hits.filter(x=>x.precision===best.precision);if(peers.length>1){const qualified=peers.filter(x=>x.province&&s.includes(normalize(x.province.replace(/省|市/g,''))));if(qualified.length!==1)return null;return qualified[0];}return best;}

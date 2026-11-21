@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {cityKey,drawAnnualImage,drawAnnualMap,drawShanghaiMap,mapAttribution,shanghaiDistricts,shanghaiMapPlaces,shanghaiMetroLayers} from '../annual-review.js';
-import {containsPoint,gcjToWgs} from '../organize.js';
-import {palettes} from '../appearance.js';
+import {cityKey,drawAnnualImage,drawAnnualMap,drawShanghaiMap,mapAttribution,shanghaiDistricts,shanghaiMapPlaces,shanghaiMetroLayers} from '../lib/annual-review.js';
+import {containsPoint,gcjToWgs} from '../lib/geo.js';
+import {palettes} from '../lib/appearance.js';
 
 const loadMap = async name => JSON.parse(await readFile(new URL('../data/' + name + '.json',import.meta.url),'utf8'));
 const [provinces,boundaries,landmarks] = await Promise.all(['china','city-boundaries','shanghai-landmarks'].map(loadMap));

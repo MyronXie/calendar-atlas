@@ -1,6 +1,6 @@
 $ErrorActionPreference='Stop'
 $atlasRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$atlasServer=Join-Path $atlasRoot 'server.mjs'
+$atlasServer=Join-Path $atlasRoot 'server/server.mjs'
 try{$atlasHealth=Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/health' -TimeoutSec 2}catch{Write-Output 'Calendar Atlas is not running, or port 8787 belongs to another service.';exit 0}
 if($atlasHealth.app -ne 'calendar-atlas'){throw 'Refusing to stop an unrelated service.'}
 $atlasProcess=Get-CimInstance Win32_Process -Filter ('ProcessId='+[int]$atlasHealth.pid)

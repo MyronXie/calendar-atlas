@@ -15,8 +15,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {parseExif, parseHeic} from './photo-exif.mjs';
-import {parseCSV, stringifyCSV} from '../csv-store.mjs';
-import {atlasDataDirectory} from '../atlas-data.mjs';
+import {stringifyCSV} from '../server/csv-store.mjs';
+import {atlasDataDirectory} from '../server/atlas-data.mjs';
+import {readConfig} from '../server/config-store.mjs';
 import {loadPlaces, amapAroundTypes, regeoRegion, composeAddress, rootURL} from './place-common.mjs';
 
 const projectRoot = fileURLToPath(rootURL);
@@ -177,12 +178,11 @@ export function clusterPhotos(photos, radius = 200) {
 }
 
 /**
- * 免费匹配：先本地地点库（valid≠no、非住宿，半径较小更精准），再「商场/商圈」表（半径可略大）。
- * 命中任一即视为已定位，无需再查高德。
+ * 免费匹配：只匹配本地地点库（valid≠no、非住宿，半径较小更精准）。
+ * 命中即视为已定位，无需再查高德。
  */
-export function matchLocal(clusters, places, radius = 60, malls = [], mallRadius = 250) {
+export function matchLocal(clusters, places, radius = 60) {
   for (const c of clusters) {
-    // 1) 本地地点库
     let best = null, bd = Infinity;
     for (const pl of places) {
       const d = haversine([c.lat, c.lon], [pl.lat, pl.lon]);
@@ -192,18 +192,6 @@ export function matchLocal(clusters, places, radius = 60, malls = [], mallRadius
     if (best && bd <= radius) {
       c.place = best.location; c.address = best.address; c.adcode = best.adcode;
       c.dist = Math.round(bd); c.source = '地点库'; c.level = '地点库'; c.needsQuery = false;
-      continue;
-    }
-    // 2) 商场/商圈表
-    let mb = null, md = Infinity;
-    for (const m of malls) {
-      const d = haversine([c.lat, c.lon], [m.lat, m.lon]);
-      if (d < md) { md = d; mb = m; }
-    }
-    c.nearestMallM = Number.isFinite(md) ? Math.round(md) : null;
-    if (mb && md <= mallRadius) {
-      c.place = mb.location; c.address = mb.address; c.adcode = mb.adcode || '';
-      c.dist = Math.round(md); c.source = '商场'; c.level = '商场'; c.needsQuery = false;
       continue;
     }
     c.place = ''; c.address = ''; c.adcode = ''; c.dist = Number.isFinite(bd) ? Math.round(bd) : 0;
@@ -293,7 +281,7 @@ async function photonReverseRich(lat, lon) {
  */
 export async function resolveClusters(clusters, opts) {
   const cache = opts.cache || {};
-  const stats = {calls: 0, cacheHits: 0, fine: 0, coarse: 0, mall: 0, osm: 0, exhausted: 0, failed: 0};
+  const stats = {calls: 0, cacheHits: 0, fine: 0, coarse: 0, osm: 0, exhausted: 0, failed: 0};
   // 已解析缓存（含坐标），用于重新聚类后按邻近复用，避免重复调用高德
   const cacheList = Object.entries(cache).map(([k, v]) => { const [lon, lat] = k.split(',').map(Number); return {lat, lon, v}; }).filter(e => Number.isFinite(e.lat) && Number.isFinite(e.lon));
   const queue = clusters.filter(c => c.needsQuery).sort((a, b) => b.photos.length - a.photos.length);
@@ -308,7 +296,7 @@ export async function resolveClusters(clusters, opts) {
       if (info) {
         Object.assign(c, {...info, needsQuery: false});
         cache[key] = info;
-        if (info.level === '具体地点') stats.fine++; else if (info.level === '商场') stats.mall++; else stats.coarse++;
+        if (info.level === '具体地点') stats.fine++; else stats.coarse++;
         if (++dirty >= 10 && opts.cachePath) { await saveCache(opts.cachePath, cache); dirty = 0; }
       } else { c.place = '(未匹配地点)'; c.source = 'OSM失败'; c.level = ''; c.needsQuery = false; }
       continue;
@@ -318,7 +306,7 @@ export async function resolveClusters(clusters, opts) {
     if (hit && hit.place && hit.place !== '(未匹配地点)' && !LODGING_RE.test(hit.place) && !NOISE_NAME.test(hit.place) && !FACILITY_RE.test(hit.place)) {
       Object.assign(c, {place: cleanName(hit.place), address: hit.address, adcode: hit.adcode, dist: hit.dist, source: hit.source + '(缓存)', level: hit.level, needsQuery: false});
       stats.cacheHits++;
-      if (hit.level === '具体地点') stats.fine++; else if (hit.level === '商场') stats.mall++; else if (hit.level === '行政区') stats.coarse++;
+      if (hit.level === '具体地点') stats.fine++; else if (hit.level === '行政区') stats.coarse++;
       continue;
     }
     // 邻近缓存复用（半径内、非住宿）
@@ -332,7 +320,7 @@ export async function resolveClusters(clusters, opts) {
       if (best && bd <= opts.cacheRadius) {
         Object.assign(c, {place: cleanName(best.v.place), address: best.v.address, adcode: best.v.adcode, dist: Math.round(bd), source: (best.v.source || '') + '(邻近缓存)', level: best.v.level, needsQuery: false});
         stats.cacheHits++;
-        if (best.v.level === '具体地点') stats.fine++; else if (best.v.level === '商场') stats.mall++; else if (best.v.level === '行政区') stats.coarse++;
+        if (best.v.level === '具体地点') stats.fine++; else if (best.v.level === '行政区') stats.coarse++;
         continue;
       }
     }
@@ -362,7 +350,7 @@ export async function resolveClusters(clusters, opts) {
     if (!info) {
       await sleep(220);
       const pi = await photonReverseRich(c.lat, c.lon); stats.osm++;
-      if (pi) { info = pi; if (pi.level === '具体地点') stats.fine++; else if (pi.level === '商场') stats.mall++; else stats.coarse++; }
+      if (pi) { info = pi; if (pi.level === '具体地点') stats.fine++; else stats.coarse++; }
     }
     if (!info) { c.place = '(未匹配地点)'; c.source = ''; c.level = ''; c.needsQuery = false; continue; }
     Object.assign(c, {...info, needsQuery: false});
@@ -378,7 +366,7 @@ async function saveCache(file, cache) {
   try { await fs.mkdir(path.dirname(file), {recursive: true}); await fs.writeFile(file, JSON.stringify(cache, null, 0)); } catch { }
 }
 
-const LEVEL_RANK = {'具体地点': 5, '商场': 4, '地点库': 3, '行政区': 2, '': 1, '额度不足': 0};
+const LEVEL_RANK = {'具体地点': 5, '地点库': 3, '行政区': 2, '': 1, '额度不足': 0};
 const WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 const weekdayOf = (d) => { const t = new Date(d + 'T00:00:00'); return Number.isNaN(t.getTime()) ? '' : WD[t.getDay()]; };
 
@@ -452,14 +440,14 @@ export function groupTrips(visits) {
 export function renderReport(meta) {
   const {stamp, dirs, stats, clusters, visits, amap, opts} = meta;
   const photoCount = clusters.reduce((s, c) => s + c.photos.length, 0);
-  const levels = {'具体地点': 0, '商场': 0, '地点库': 0, '行政区': 0, '': 0, '额度不足': 0};
+  const levels = {'具体地点': 0, '地点库': 0, '行政区': 0, '': 0, '额度不足': 0};
   for (const c of clusters) levels[c.level] = (levels[c.level] || 0) + 1;
   const unresolved = clusters.filter(c => !c.level || c.level === '').length;
   const md = [];
   md.push(`# 照片地点行程（${stamp}）`, '');
   md.push(`照片目录：${dirs.map(d => '`' + d + '`').join('、')}`, '');
   md.push(`共扫描图片 ${stats.images} 张；解析出带 GPS 与拍摄时间 ${photoCount} 张；按约 ${opts.clusterRadius} 米聚成 ${clusters.length} 个地点簇。${stats.excluded ? `已排除指定区域的照片 ${stats.excluded} 张。` : ''}`);
-  md.push(`匹配：具体地点 ${levels['具体地点'] || 0}、商场 ${levels['商场'] || 0}、地点库 ${levels['地点库'] || 0}、行政区 ${levels['行政区'] || 0}、未匹配/额度不足 ${unresolved}。`);
+  md.push(`匹配：具体地点 ${levels['具体地点'] || 0}、地点库 ${levels['地点库'] || 0}、行政区 ${levels['行政区'] || 0}、未匹配/额度不足 ${unresolved}。`);
   if (amap) md.push(`高德查询 ${amap.calls} 次（预算 ${amap.budget}，缓存命中 ${amap.cacheHits}${amap.exhausted ? `，额度不足 ${amap.exhausted}` : ''}）${amap.osm ? `；OSM 境外反查 ${amap.osm} 次` : ''}。`);
   md.push(`去重半径 ${opts.dedupe} 米；无元信息 ${stats.noExif}，无 GPS ${stats.noGps}，无日期 ${stats.noDate}，不可读 ${stats.unreadable}，跳过其它 ${stats.skippedOther}${stats.truncated ? `，超长截断 ${stats.truncated}` : ''}。`);
   md.push('', '> 隐私：仅解析照片元信息（EXIF/HEIC 的位置与时间），未读取或导出图像内容，也未复制图片。', '');
@@ -496,7 +484,7 @@ export function renderReport(meta) {
 }
 
 export const VISIT_HEADERS = ['date', 'first_time', 'last_time', 'place', 'level', 'address', 'adcode', 'lat', 'lon', 'distance_m', 'source', 'photo_count', 'sample_photo'];
-export const CLUSTER_HEADERS = ['cluster_id', 'lat', 'lon', 'spread_m', 'photo_count', 'dirs', 'dates', 'place', 'level', 'source', 'address', 'adcode', 'nearest_place_m', 'nearest_mall_m'];
+export const CLUSTER_HEADERS = ['cluster_id', 'lat', 'lon', 'spread_m', 'photo_count', 'dirs', 'dates', 'place', 'level', 'source', 'address', 'adcode', 'nearest_place_m'];
 
 export function visitRows(visits) {
   return visits.map(v => ({...v, dirs: undefined}));
@@ -507,34 +495,40 @@ export function clusterRows(clusters) {
     cluster_id: c.id, lat: c.lat.toFixed(6), lon: c.lon.toFixed(6), spread_m: c.spread,
     photo_count: c.photos.length, dirs: c.dirs.join(';'), dates: c.dates.join(';'),
     place: c.place || '(未匹配地点)', level: c.level || '', source: c.source || '', address: c.address || '',
-    adcode: c.adcode || '', nearest_place_m: c.nearestPlaceM == null ? '' : c.nearestPlaceM,
-    nearest_mall_m: c.nearestMallM == null ? '' : c.nearestMallM
+    adcode: c.adcode || '', nearest_place_m: c.nearestPlaceM == null ? '' : c.nearestPlaceM
   }));
 }
 
 async function loadExcludes() {
-  let text;
   try {
-    text = await fs.readFile(new URL('photo-exclusions.json', atlasDataDirectory()), 'utf8');
+    const cfg = await readConfig(fileURLToPath(atlasDataDirectory()));
+    return cfg.photoExclusions || [];
   } catch (error) {
-    if (error.code === 'ENOENT') return [];
-    throw error;
+    if (error.code !== 'ENOENT') throw error;
+    // 兼容旧的独立文件（尚未迁移到 config.json 时）
+    let text;
+    try {
+      text = await fs.readFile(new URL('photo-exclusions.json', atlasDataDirectory()), 'utf8');
+    } catch (legacyError) {
+      if (legacyError.code === 'ENOENT') return [];
+      throw legacyError;
+    }
+    const invalid = () => Error('照片排除区域需为有效经纬度范围数组（config.json 的 photos.exclusions）');
+    let rectangles;
+    try {
+      rectangles = JSON.parse(text.replace(/^\uFEFF/, ''));
+    } catch {
+      throw invalid();
+    }
+    if (!Array.isArray(rectangles)) throw invalid();
+    return rectangles.map(rectangle => {
+      const {latMin, latMax, lonMin, lonMax} = rectangle ?? {};
+      if (![latMin, latMax, lonMin, lonMax].every(Number.isFinite) ||
+          latMin < -90 || latMin >= latMax || latMax > 90 ||
+          lonMin < -180 || lonMin >= lonMax || lonMax > 180) throw invalid();
+      return {latMin, latMax, lonMin, lonMax};
+    });
   }
-  const invalid = () => Error('atlas-data/photo-exclusions.json 需包含有效的经纬度范围数组');
-  let rectangles;
-  try {
-    rectangles = JSON.parse(text.replace(/^\uFEFF/, ''));
-  } catch {
-    throw invalid();
-  }
-  if (!Array.isArray(rectangles)) throw invalid();
-  return rectangles.map(rectangle => {
-    const {latMin, latMax, lonMin, lonMax} = rectangle ?? {};
-    if (![latMin, latMax, lonMin, lonMax].every(Number.isFinite) ||
-        latMin < -90 || latMin >= latMax || latMax > 90 ||
-        lonMin < -180 || lonMin >= lonMax || lonMax > 180) throw invalid();
-    return {latMin, latMax, lonMin, lonMax};
-  });
 }
 
 function parseExcludes(text) {
@@ -544,24 +538,15 @@ function parseExcludes(text) {
 }
 const inExcluded = (p, rects) => rects.some(r => p.lat >= r.latMin && p.lat <= r.latMax && p.lon >= r.lonMin && p.lon <= r.lonMax);
 
-async function loadMalls(file) {
-  try {
-    const db = parseCSV(await fs.readFile(file, 'utf8'));
-    return db.places.map(m => ({location: m.location, address: m.address || '', lat: +m.lat, lon: +m.lon}))
-      .filter(m => m.location && Number.isFinite(m.lat) && Number.isFinite(m.lon));
-  } catch { return []; }
-}
-
 async function main() {
   const argv = process.argv.slice(2);
   const arg = (n, d) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : d; };
   const dirs = [];
   for (let i = 0; i < argv.length; i++) if (argv[i] === '--dir') String(argv[i + 1] || '').split(',').map(s => s.trim()).filter(Boolean).forEach(d => dirs.push(d));
   if (!dirs.length) {
-    console.error('用法: node tools/photos-to-places.mjs --dir <文件夹> [--dir <文件夹2>] [--out 前缀] [--cluster-radius 100] [--local-radius 60] [--mall-radius 250] [--dedupe 80] [--fine-radius 800] [--max-calls 400] [--preview|--no-amap]');
+    console.error('用法: node tools/photos-to-places.mjs --dir <文件夹> [--dir <文件夹2>] [--out 前缀] [--cluster-radius 100] [--local-radius 60] [--dedupe 80] [--fine-radius 800] [--max-calls 400] [--preview|--no-amap]');
     console.error('  --cluster-radius 地点簇半径(米，默认100)；--local-radius 本地地点库匹配半径(默认60，更精准)');
-    console.error('  --mall-radius 商场表匹配半径(米，默认250)；--dedupe 同一天合并半径(默认80)');
-    console.error('  --fine-radius 高德 POI 搜索半径(米，默认800)；--max-calls 高德调用预算(默认400)');
+    console.error('  --dedupe 同一天合并半径(默认80)；--fine-radius 高德 POI 搜索半径(米，默认800)；--max-calls 高德调用预算(默认400)');
     console.error('  --exclude-rect "latMin,latMax,lonMin,lonMax;..." 覆盖本地排除区域配置（none 表示不排除）');
     console.error('  --preview 只聚类不查询；--no-amap 不调高德');
     process.exit(1);
@@ -571,19 +556,17 @@ async function main() {
   const opts = {
     clusterRadius: Number(arg('--cluster-radius', arg('--radius', '100'))),
     localRadius: Number(arg('--local-radius', '60')),
-    mallRadius: Number(arg('--mall-radius', '250')),
     cacheRadius: Number(arg('--cache-radius', '120')),
     dedupe: Number(arg('--dedupe', '80')),
     fineRadius: Number(arg('--fine-radius', arg('--major-radius', '800'))),
     maxCalls: clamp(Number(arg('--max-calls', '400')), 0, 5000),
     maxBytes: Number(arg('--max-read-bytes', '16000000')),
-    cachePath: arg('--cache', path.join(projectRoot, 'reports', '.photo-amap-cache.json')),
-    mallPath: arg('--mall', path.join(projectRoot, 'atlas-data', 'mall.csv')),
+    cachePath: arg('--cache', path.join(projectRoot, 'temps', '.photo-amap-cache.json')),
     excludes: excludeArg === null ? await loadExcludes() : parseExcludes(excludeArg),
     noAmap: argv.includes('--no-amap'),
     preview: argv.includes('--preview')
   };
-  const outBase = arg('--out', null) || path.join(projectRoot, 'reports', `照片地点记录_${stamp}`);
+  const outBase = arg('--out', null) || path.join(projectRoot, 'temps', `照片地点记录_${stamp}`);
 
   const {photos, stats} = await readPhotos(dirs, {maxBytes: opts.maxBytes});
   // 排除配置中的日常区域
@@ -594,10 +577,9 @@ async function main() {
     .filter(p => String(p.valid).toLowerCase() !== 'no' && p.type !== 'stay' && !LODGING_RE.test(p.location))
     .map(p => ({location: p.location, address: p.address, adcode: p.adcode, lat: +p.lat, lon: +p.lon}))
     .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
-  const malls = await loadMalls(opts.mallPath);
 
   const clusters = clusterPhotos(kept, opts.clusterRadius);
-  matchLocal(clusters, places, opts.localRadius, malls, opts.mallRadius);
+  matchLocal(clusters, places, opts.localRadius);
 
   let amap = null;
   if (!opts.noAmap && !opts.preview) {
@@ -616,7 +598,7 @@ async function main() {
 
   console.log(JSON.stringify({
     dirs, images: stats.images, photos: kept.length, excluded: stats.excluded, clusters: clusters.length,
-    malls: malls.length, places: places.length,
+    places: places.length,
     needsQuery: clusters.filter(c => c.needsQuery).length,
     amap, visits: visits.length, dates: [...new Set(visits.map(v => v.date))].length,
     out: {md: outBase + '.md', csv: outBase + '.csv', clusters: outBase + '_簇.csv'}
