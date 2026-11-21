@@ -40,6 +40,7 @@
 
 - `atlas-data/`、其中的备份、生成的报告、照片与查询缓存、密钥和签名文件留在本地。`data/` 是程序使用的公开地图数据。`tests/fixtures/` 是合成测试素材（含 `fixture.ics`、`place.csv`、`config.json`）。
 - `config.json` 采用 v2 分组结构：`filters.blacklist`（事件/地点排除）、`emojis`（图标映射）、`photos.exclusions`（照片日常区域）。旧扁平结构仍可读，保存时自动升级为 v2。照片排除已并入这里，不再使用单独的 `photo-exclusions.json`。
+- 地点显示与计数以 `place.csv` 的 `location` 为准：日历里通过 `aliases` 命中的写法，读入应用后统一显示为对应 `location`，避免同一地点分开计数；搜索时输入别名也会先映射到 `location`。新增/编辑地点时 `address` 必须写全称（省/自治区/直辖市 + 市/州 + 区/县 + 道路/门牌）；境外用英文地址。
 - 从 Outlook 等客户端导出的 `calendar.ics` 含 Word 生成的 `X-ALT-DESC` HTML 冗余（与 `DESCRIPTION` 重复，约 97% 是样板）。导出替换后跑 `npm run clean:calendar -- --write`（或双击 `tools/清理日历.cmd`）清除：先备份到 `.backups/`，逐条比对事件不变才写入，通常缩约 30%。客户端每次导出会重新带回，属例行一步。
 - 极少数事件正文是 Word 富文本，单条 `X-ALT-DESC` 约 38KB。可用 `tools/Outlook正文转纯文本.cmd`（`tools/outlook-plaintext.ps1`）在 Outlook 里批量改成纯文本：先用 RTF 体积筛候选，默认只预览，`-Apply` 才改；仅中文界面 Outlook、须 Windows PowerShell 5.1。改完可永久减小导出，零散小 HTML 仍靠上一条清理。
 - 桌面使用本地 HTTP API。发布的移动包用 `--data-less`，手机导入缓存到当前应用的 IndexedDB。浏览器偏好在 localStorage。桌面更新文件后，手机需用新文件分别替换。

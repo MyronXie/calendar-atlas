@@ -60,7 +60,7 @@ export const rootURL = root;
 // OSM Photon (non-domestic, free) — for overseas verification
 export async function regeoRegion(lon, lat) {
   if (!KEY || !Number.isFinite(+lon) || !Number.isFinite(+lat)) return null;
-  try { const r = await fetch(`https://restapi.amap.com/v3/geocode/regeo?key=${KEY}&location=${(+lon).toFixed(6)},${(+lat).toFixed(6)}&extensions=base`, { signal: AbortSignal.timeout(8000) }); const j = await r.json(); if (j.status !== '1' || !j.regeocode) return null; const a = j.regeocode.addressComponent || {}; const str = v => Array.isArray(v) ? '' : (v || ''); return { prov: str(a.province), city: str(a.city), district: str(a.district), adcode: str(a.adcode) }; } catch { return null; }
+  try { const r = await fetch(`https://restapi.amap.com/v3/geocode/regeo?key=${KEY}&location=${(+lon).toFixed(6)},${(+lat).toFixed(6)}&extensions=all`, { signal: AbortSignal.timeout(8000) }); const j = await r.json(); if (j.status !== '1' || !j.regeocode) return null; const a = j.regeocode.addressComponent || {}; const str = v => Array.isArray(v) ? '' : (v || ''); const sn = a.streetNumber || {}; return { prov: str(a.province), city: str(a.city), district: str(a.district), township: str(a.township), adcode: str(a.adcode), formatted: str(j.regeocode.formatted_address), street: String(sn.street || ''), number: String(sn.number || '') }; } catch { return null; }
 }
 export function composeAddress(region, address) {
   const addr = String(address || ''); if (!region || !region.prov) return addr; const { prov, city, district } = region; const mid = (city && city !== prov ? city : '');
