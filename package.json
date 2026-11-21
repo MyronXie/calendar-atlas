@@ -12,6 +12,11 @@
     "verify": "node tools/place-verify.mjs",
     "apply": "node tools/place-apply.mjs",
     "pending": "node tools/refresh-pending-places.mjs",
+    "classify": "node tools/place-classify.mjs",
+    "screen": "node tools/place-screen.mjs",
+    "enrich": "node tools/place-enrich.mjs",
+    "merge": "node tools/place-merge.mjs",
+    "report": "node tools/place-report.mjs",
     "build:mobile": "node tools/build-mobile.mjs"
   }
 }
