@@ -29,9 +29,9 @@ aside{touch-action:pan-y}
 .drawer-close,.toolbar-short{display:none}
 #drawer-scrim{position:fixed;inset:0;z-index:980;background:var(--overlay);touch-action:none}
 body.drawer-modal{position:fixed;inset:var(--drawer-scroll-offset) 0 auto;width:100%;overflow:hidden}
-.drawer-top{flex:none;background:var(--surface,#fff);padding:var(--drawer-padding) var(--drawer-padding) 0;border-bottom:1px solid var(--line)}
+.drawer-top{flex:none;background:var(--surface,#fff);padding:12px var(--drawer-padding) 8px;border-bottom:1px solid var(--line)}
 .drawer-scroll{flex:1;min-height:0;overflow:auto;touch-action:pan-y;overscroll-behavior:contain;padding:0 var(--drawer-padding) var(--drawer-padding)}
-.drawertabs,.settings-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:0 0 12px}
+.drawertabs,.settings-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:0}
 .drawertabs{grid-template-columns:repeat(4,minmax(0,1fr))}
 .drawertabs button,.settings-tabs button{min-width:0;padding:7px 3px;border-color:transparent;white-space:nowrap;font-size:13px}
 .drawertabs button.active,.settings-tabs button.active{background:var(--accent);color:var(--selected-ink,#fff);font-weight:600}
@@ -205,9 +205,14 @@ dialog{width:520px;max-width:94vw;max-height:92vh;overflow:auto;padding:22px;bor
 .timeline-range-dialog h2{margin:0 0 12px}
 .date-fields{display:grid;gap:8px;grid-template-columns:repeat(2,minmax(0,1fr))}
 .date-fields label{min-width:0;margin:0}
-.date-fields input{box-sizing:border-box;display:block;width:100%;min-width:0;max-width:100%;height:var(--control-height);padding-inline:6px;-webkit-appearance:none;appearance:none}
-.date-fields input::-webkit-date-and-time-value{text-align:start;min-width:0}
+.date-fields input{box-sizing:border-box;display:block;width:100%;min-width:0;max-width:100%;height:var(--control-height);padding-inline:6px;-webkit-appearance:none;appearance:none;text-align:center}
+.date-fields input::-webkit-date-and-time-value{text-align:center;min-width:0}
 .date-fields input::-webkit-datetime-edit{min-width:0;padding:0}
+/* iOS Safari 下日期文字会贴近左上角，需用 flex 同时做水平和垂直居中 */
+@supports (-webkit-touch-callout:none){
+ .date-fields input{display:flex;align-items:center;justify-content:center;padding:0}
+ .date-fields input::-webkit-datetime-edit{display:flex;align-items:center;justify-content:center}
+}
 #timeline-range-error{color:var(--highlight);margin:8px 0}
 #timeline-range-form .quick{justify-content:flex-end;margin-top:12px}
 @media(max-width:350px){.date-fields{grid-template-columns:minmax(0,1fr)}}
@@ -457,7 +462,7 @@ body:has(.trip-dialog[open],.annual-card[open]){overflow:hidden}
  .app-title{display:none}
  .toolbar-reports{gap:var(--space-1)}
  .app-toolbar button{white-space:nowrap;padding-inline:var(--space-2)}
- :is(.app-toolbar button,.eventsearchbar button,.eventsearchbar input,.eventsearchbar select,.maptools select,.maptools button,.date-fields input){min-height:var(--control-touch)}
+ :is(.app-toolbar button,.eventsearchbar button,.eventsearchbar input,.eventsearchbar select,.maptools select,.maptools button,.date-fields input,.periodtools button,.timeline-mode button){min-height:var(--control-height)}
  .mapbar,.timelinehead,.eventhead{min-height:0;padding:var(--space-1) var(--space-3)}
  #trip-share,#annual-export{display:grid;place-items:center}
 }
@@ -474,8 +479,9 @@ body:has(.trip-dialog[open],.annual-card[open]){overflow:hidden}
  .toolbar-long{display:none}
  .toolbar-short{display:inline}
  .drawer-top{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px}
- .drawer-close{display:inline-grid;place-items:center;width:var(--control-touch);min-height:var(--control-touch);padding:0}
+ .drawer-close{display:inline-grid;place-items:center;align-self:center;width:var(--control-height);height:var(--control-height);min-height:0;padding:0}
  .drawer-scroll{overscroll-behavior:none}
+ .unit-toggle{border-radius:6px}
 }
 
 @media(max-width:350px){.app-toolbar button{padding-inline:4px}}
@@ -512,7 +518,27 @@ body[data-color-mode=night]{color-scheme:dark;--overlay:#0009;--map-label-halo:#
  .event-weekday-narrow{display:inline}
 }
 @media(max-width:650px){
- #event-display-options button{width:var(--control-touch);min-height:var(--control-touch)}
+ #event-display-options button{width:var(--control-height);min-height:var(--control-height)}
 }
 .pref-select{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0}
 .pref-select select{max-width:55%}
+
+/* 事件列表收起时，卡片保持完整的圆角矩形，底部不被方形表头截断 */
+.events:has(#eventlist-body[hidden]){overflow:hidden}
+.events:has(#eventlist-body[hidden]) #event-sticky{border-radius:calc(var(--panel-radius) - 1px)}
+
+/* 屏幕高度不足（例如手机横屏）：主标题栏不吸顶，随页面向上收起；压缩工具栏文字避免挤成两行 */
+@media(max-height:540px){
+ .app-toolbar{position:static}
+ #event-sticky{top:0}
+ #timeline-header{scroll-margin-top:0}
+ .app-title{display:none}
+ .toolbar-long{display:none}
+ .toolbar-short{display:inline}
+ .app-toolbar button{white-space:nowrap}
+ .unit-toggle{border-radius:6px}
+ body:not(.drawer-closed):not(.settings-open) #toggle-settings .toolbar-label{display:none}
+ body:not(.drawer-closed):not(.settings-open) #toggle-settings{width:var(--control-height);padding-inline:0}
+ body.settings-open #toggle-drawer .toolbar-label{display:none}
+ body.settings-open #toggle-drawer{width:var(--control-height);padding-inline:0}
+}

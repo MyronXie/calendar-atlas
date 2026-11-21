@@ -157,6 +157,7 @@ $('timeline-range').onclick=()=>{
  [rangeFields[0].value,rangeFields[1].value]=selectedRange;
  showRangeError(false);
  rangeDialog.showModal();
+ $('timeline-range-cancel').focus?.({preventScroll:true});
 };
 $('timeline-range-cancel').onclick=()=>rangeDialog.close();
 for(const field of rangeFields)field.oninput=()=>showRangeError(false);
@@ -1719,7 +1720,7 @@ function collapseSection(key){
  if(key==='map'){
   $('map-tools').hidden=closed;
   if(!closed)map.invalidateSize({pan:false});
-  else $('map-title').textContent='地点';
+  else if(!$('map-title').textContent)$('map-title').textContent='地点';
  }
 }
 function setSectionCollapsed(key,closed){
