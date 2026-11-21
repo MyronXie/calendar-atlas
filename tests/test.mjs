@@ -8,3 +8,12 @@ modified.events[0].places.push('Temporary place');
 modified.events[0].start.setUTCFullYear(2030);
 const expandedAgain=expand(es,new Date('2026-01-01'),new Date('2026-01-05'));
 assert.deepEqual(expandedAgain.events,out.events);
+
+const separateSeries=[
+ 'BEGIN:VEVENT','UID:separate-series','DTSTART:20260101T100000Z','DTEND:20260101T110000Z',
+ 'RRULE:FREQ=DAILY;COUNT=3','SUMMARY:Independent event','END:VEVENT','END:VCALENDAR',
+].join('\r\n');
+const parallelCalendar=fixture.replace('END:VCALENDAR',separateSeries);
+const parallel=expand(parseCalendar(parallelCalendar),new Date('2026-01-01'),new Date('2026-01-05'));
+assert.equal(parallel.events.filter(event=>event.title==='Changed').length,1);
+assert.equal(parallel.events.filter(event=>event.title==='Independent event').length,3);
