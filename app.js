@@ -319,6 +319,15 @@ function eventTitleText(title){
  return mark('group',group,title.slice(0,separator))+mark('event',name,title.slice(separator));
 }
 const entityIcon=(kind,extraClass='')=>'<svg class="entity-icon '+extraClass+'" width="16" height="16" aria-hidden="true"><use href="#icon-'+kind+'"/></svg>';
+function highlightNote(text,values){
+ let out=E(text);
+ for(const value of [...new Set(values)].filter(Boolean).sort((a,b)=>b.length-a.length)){
+  const needle=E(value); if(!needle)continue;
+  const pattern=needle.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  out=out.replace(new RegExp(pattern,'gi'),match=>'<mark class="filter-highlight">'+match+'</mark>');
+ }
+ return out;
+}
 function eventEntities(names,kind,index,visible,expanded=false){
  const isPlace=kind==='place';
  const wrapper='evententities '+(isPlace?'eventplaces':'eventpeople')+(expanded?' is-expanded':'');
@@ -371,6 +380,11 @@ function selectEventRange(event){
 function renderEvents(){
  const rows=filtered,container=$('events');
  $('eventtitle').textContent='事件 · '+rows.length;
+ // 有地点/人物筛选且对应列被收起时，临时展开该列，保证匹配到的名称可见
+ const forcePlaces=appliedCriteria.some(c=>c.kind==='place'||c.kind==='placeGroup'||c.kind==='placeType');
+ const forcePeople=appliedCriteria.some(c=>c.kind==='person');
+ if(forcePlaces&&!eventColumns.places){eventColumns.places=true;$('showplaces')?.setAttribute('aria-pressed','true');}
+ if(forcePeople&&!eventColumns.people){eventColumns.people=true;$('showpeople')?.setAttribute('aria-pressed','true');}
  const {places:showPlaces,people:showPeople}=eventColumns;
  container.classList.toggle('hide-places',!showPlaces);
  container.classList.toggle('hide-people',!showPeople);
@@ -386,12 +400,22 @@ function renderEvents(){
    +'<span class="event-weekday-wide">'+weekday+'</span></span> <span class="event-clock">'+dateField('hour',hour+':'+minute)
    +'<span class="event-weekday-narrow">'+weekday+'</span></span>';
   const trip=isTrip(event)?'<button type="button" class="event-action event-trip" data-trip-event="'+i+'" aria-label="查看行程详细" title="查看行程详细">'+entityIcon('trip')+'</button>':'';
+  // 备注关键词命中：临时显示备注，并高亮匹配词
+  const noteMatches=appliedCriteria.filter(c=>c.kind==='keyword'&&matchesCriterionText(c,'note',event.note||''));
+  let noteHtml='';
+  if(noteMatches.length){
+   const note=highlightNote(event.note||'',noteMatches.map(c=>c.value));
+   noteHtml='<div class="event-note"><svg class="entity-icon event-note-icon" width="14" height="14" aria-hidden="true"><use href="#icon-note"/></svg><span>'+note+'</span></div>';
+  }
+  const noteWide=noteHtml?noteHtml.replace('class="event-note"','class="event-note event-note-wide"'):'';
+  const noteNarrow=noteHtml?noteHtml.replace('class="event-note"','class="event-note event-note-narrow"'):'';
   return '<article class="event"><div class="eventrow"><button type="button" class="event-time" data-event-range="'+i
    +'" title="查看这段时间的事件"><time datetime="'+event.start.toISOString()+'">'+time+'</time></button>'
    +'<div class="event-details"><div class="eventname"><button class="eventtitle" data-filter-event="'+E(event.title)+'" title="按组别与事件筛选">'+eventTitleText(event.title)+'</button>'+trip+'</div>'
    +eventEntities(event.places,'place',i,showPlaces,expandedEventPlaces.has(key))
    +eventEntities(event.partners,'person',i,showPeople)
-   +'</div></div></article>';
+   +noteNarrow
+   +'</div></div>'+noteWide+'</article>';
  }).join('')||'<div class="empty">无事件</div>';
  $('more').hidden=rows.length<=limit;
  container.querySelectorAll('[data-place-toggle]').forEach(button=>button.onclick=()=>{
@@ -737,7 +761,7 @@ function draw(){if($('map-body').hidden)return;clearTouchPreview();shanghaiLayer
  for(const input of placeToggles.querySelectorAll('input'))input.checked=$(input.name).checked;const heat=Boolean($('heatmap')&&$('heatmap').checked)&&mapLevel()==='place';if(mapLevel()!=='place'){drawOverview();return;}map.options.zoomSnap=1;map.setMinZoom(0);map.setMaxZoom(18);overviewLevel='';clearOverview();if(!tiles||!map.hasLayer(tiles))setProvider(false);$('provider').disabled=false;$('provider').style.display='';if(heatLayer)map.removeLayer(heatLayer);drawPlaceMarkers(heat);}
 map.on('click',e=>{clearTouchPreview();if(!pickMode)return;pickMode=false;const p=basemaps[$('provider').value]?.gcj02&&mapLevel()==='place'&&isMainland(e.latlng.lat,e.latlng.lng)?gcjToWgs(e.latlng.lat,e.latlng.lng):[e.latlng.lat,e.latlng.lng];$('editform').elements.lat.value=p[0].toFixed(6);$('editform').elements.lon.value=p[1].toFixed(6);$('editform').elements.datum.value='wgs84';$('editor').showModal();$('status').textContent='已选取坐标，点击保存完成标注';});
 $('pickpoint').onclick=()=>{if(mapLevel()!=='place'){$('level').value='place';buildPoints();}if($('map-body').hidden)setSectionCollapsed('map',false);else{draw();fitPoints();}pickMode=true;$('editor').close();$('status').textContent='请在地图上点击精确位置（坐标仅存本机）';};
-$('reset').onclick=()=>mapLevel()==='shanghai'?fitOverview():fitPoints();$('level').onchange=async()=>{const lv=mapLevel();if(lv==='shanghai'){await enterShanghaiMap();return;}if(lv==='country'&&!world){$('status').textContent='正在加载国家边界…';try{world=await (await fetch('data/world.json')).json();setupGaz();cache.clear();}catch{}finally{$('status').textContent='';}}if(mapLevel()!==lv)return;buildPoints();draw();fitPoints();};$('exclude').onchange=refresh;$('search').oninput=()=>{refresh();};$('searchscope').onchange=()=>refresh();$('searchform').onsubmit=e=>{e.preventDefault();const value=$('search').value.trim();if(!value)return;const c=searchCriterion($('searchscope').value||'all',value,rangeCache?.events||[]);if(!activeCriteria.some(x=>x.id===c.id))activeCriteria.push(c);$('search').value='';refresh();fitPoints();};$('more').onclick=()=>{limit+=50;renderEvents();};$('unselect').onclick=()=>{activeCriteria=activeCriteria.filter(c=>c.kind==='time');$('search').value='';limit=50;refresh();};document.querySelectorAll('[data-panel]').forEach(el=>el.onclick=()=>{tab=el.dataset.tab;document.querySelectorAll('[data-panel]').forEach(x=>x.classList.toggle('active',x===el));renderRank();});document.querySelectorAll('[data-settings-panel]').forEach(el=>el.onclick=()=>{activePanel=el.dataset.settingsPanel;document.querySelectorAll('[data-settings-panel]').forEach(x=>x.classList.toggle('active',x===el));$('settings-drawer').querySelectorAll('[data-content]').forEach(x=>x.hidden=x.dataset.content!==activePanel);if(activePanel==='manage')renderPlaces();});
+$('reset').onclick=()=>mapLevel()==='shanghai'?fitOverview():fitPoints();$('level').onchange=async()=>{const lv=mapLevel();if(lv==='shanghai'){await enterShanghaiMap();return;}if(lv==='country'&&!world){$('status').textContent='正在加载国家边界…';try{world=await fetchJsonWithProgress('data/world.json','国家边界');setupGaz();cache.clear();}catch{}finally{$('status').textContent='';}}if(mapLevel()!==lv)return;buildPoints();draw();fitPoints();};$('exclude').onchange=refresh;$('search').oninput=()=>{refresh();};$('searchscope').onchange=()=>refresh();$('searchform').onsubmit=e=>{e.preventDefault();const value=$('search').value.trim();if(!value)return;const c=searchCriterion($('searchscope').value||'all',value,rangeCache?.events||[]);if(!activeCriteria.some(x=>x.id===c.id))activeCriteria.push(c);$('search').value='';refresh();fitPoints();};$('more').onclick=()=>{limit+=50;renderEvents();};$('unselect').onclick=()=>{activeCriteria=activeCriteria.filter(c=>c.kind==='time');$('search').value='';limit=50;refresh();};document.querySelectorAll('[data-panel]').forEach(el=>el.onclick=()=>{tab=el.dataset.tab;document.querySelectorAll('[data-panel]').forEach(x=>x.classList.toggle('active',x===el));renderRank();});document.querySelectorAll('[data-settings-panel]').forEach(el=>el.onclick=()=>{activePanel=el.dataset.settingsPanel;document.querySelectorAll('[data-settings-panel]').forEach(x=>x.classList.toggle('active',x===el));$('settings-drawer').querySelectorAll('[data-content]').forEach(x=>x.hidden=x.dataset.content!==activePanel);if(activePanel==='manage')renderPlaces();});
 try{
  const pref=JSON.parse(localStorage.getItem('atlas-event-columns')||'{}');
  for(const key of Object.keys(eventColumns))eventColumns[key]=pref[key]!==false;
@@ -1624,11 +1648,31 @@ if(mobileImport)for(const button of document.querySelectorAll('[data-upload-sour
 }
 
 
+function progressTarget(){return document.querySelector('#annual-review[open]')?$('annual-status'):$('mapnotice');}
+async function fetchJsonWithProgress(url,label){
+ const response=await fetch(url);
+ if(!response.ok)throw Error(label+'读取失败');
+ const total=Number(response.headers?.get?.('Content-Length'))||0;
+ const target=progressTarget();
+ if(!response.body||typeof response.body.getReader!=='function'){
+  const data=await response.json(); if(target)target.textContent=''; return data;
+ }
+ const reader=response.body.getReader(),chunks=[]; let received=0;
+ while(true){
+  const {done,value}=await reader.read(); if(done)break;
+  chunks.push(value); received+=value.length;
+  if(target)target.textContent='正在加载'+label+'… '+(total?Math.round(received/total*100)+'%（'+Math.round(received/1024)+'KB / '+Math.round(total/1024)+'KB）':'已加载 '+Math.round(received/1024)+'KB');
+ }
+ const bytes=new Uint8Array(received); let offset=0;
+ for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
+ const data=JSON.parse(new TextDecoder().decode(bytes));
+ if(target)target.textContent='';
+ return data;
+}
 async function loadCityBoundaries(){
  if(cityBoundaries)return;
- cityBoundaryRequest??=fetch('data/city-boundaries.json').then(async response=>{
-  if(!response.ok)throw Error('城市边界读取失败');
-  cityBoundaries=await response.json();
+ cityBoundaryRequest??=fetchJsonWithProgress('data/city-boundaries.json','城市边界').then(async data=>{
+  cityBoundaries=data;
   cities=cityBoundaries.features.map(f=>f.properties).filter(p=>p.center);
   setupGaz();
   cache.clear();
@@ -1697,11 +1741,33 @@ function reviewEvents(from,to,includeOverlapping=false){
  const events=expand(source,from,to,$('recurring').checked).events;
  return applyRules(events,rules,$('exclude').checked).events.filter(inRange);
 }
-let tripEvents=[],tripMap,tripMarkers,tripRoutes,tripLayerControl,tripShareData;
+let tripEvents=[],tripMap,tripMarkers,tripRoutes,tripLayerControl,tripShareData,tripTileLayer;
 let tripExportMap,tripExportTiles,tripExportRoutes;
 const tripExportSize=420;
 let tripLinesEnabled=true;
 const tripColors=['#3d664e','#315987','#874939','#695087','#856020','#2e6a71'];
+const tripProviderKey=()=>basemaps[localStorage.getItem('atlas-trip-provider')]?localStorage.getItem('atlas-trip-provider'):'osm';
+function fillTripProvider(select){
+ if(!select)return;
+ select.innerHTML=Object.entries(basemaps).map(([key,value])=>'<option value="'+key+'">'+E(value.label)+'</option>').join('');
+ select.value=tripProviderKey();
+}
+function setTripProvider(key){
+ if(!basemaps[key])key='osm';
+ localStorage.setItem('atlas-trip-provider',key);
+ for(const id of ['trip-provider','trip-provider-pref']){const select=$(id);if(select)select.value=key;}
+ if(!tripMap)return;
+ if(tripTileLayer)tripMap.removeLayer(tripTileLayer);
+ const {url,options}=basemaps[key];
+ tripTileLayer=L.tileLayer(url,{maxZoom:18,...options}).addTo(tripMap);
+}
+function setupTripProviders(){
+ for(const id of ['trip-provider','trip-provider-pref']){
+  const select=$(id); if(!select)continue;
+  fillTripProvider(select);
+  select.onchange=()=>setTripProvider(select.value);
+ }
+}
 function tripDayLabel(day){
  if(day.number===null)return day.label;
  const [,month,date]=day.label.split('-').map(Number);
@@ -1805,8 +1871,7 @@ function renderTripDays(days,overview){
  addTripPins(points,tripMarkers);
  fitTripMap(tripMap,points,24,15);
  if(initialize){
-  const {url,options}=basemaps.osm;
-  L.tileLayer(url,{maxZoom:18,...options}).addTo(tripMap);
+  setTripProvider(tripProviderKey());
  }
 }
 function renderTrip(event){
@@ -1866,7 +1931,7 @@ function updateTripShareControls(){
   tripExportMap=L.map(element,{zoomAnimation:false,fadeAnimation:false,zoomControl:false,attributionControl:false,boxZoom:false,
    scrollWheelZoom:false,doubleClickZoom:false,dragging:false,touchZoom:false,keyboard:false,zoomSnap:.25});
   fitTripMap(tripExportMap,points,28,15);
-  const {url,options}=basemaps.osm;
+  const {url,options}=basemaps[tripProviderKey()]||basemaps.osm;
   tripExportTiles=L.tileLayer(url,{maxZoom:18,...options,crossOrigin:true}).addTo(tripExportMap);
   addTripPins(points,tripExportMap,true);
   tripExportRoutes=L.layerGroup();
@@ -1944,8 +2009,9 @@ $('trip-dialog').onclose=()=>{
  $('trips').setAttribute('aria-pressed','false');
  tripResize?.disconnect();
  if(tripMap)tripMap.remove();
- tripMap=tripMarkers=tripRoutes=tripLayerControl=tripShareData=null;
+ tripMap=tripMarkers=tripRoutes=tripLayerControl=tripShareData=tripTileLayer=null;
 };
+setupTripProviders();
 const reviewDateFormat=date=>date.getFullYear()+'年'+(date.getMonth()+1)+'月'+date.getDate()+'日';
 function reviewPeriod(from,to,custom){
  const start=new Date(from+'T00:00:00'),end=new Date(to+'T23:59:59.999');
