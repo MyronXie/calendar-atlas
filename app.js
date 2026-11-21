@@ -1,7 +1,7 @@
 import {annualLegend,cityKey,drawAnnualImage,drawAnnualMap,drawShanghaiMap,layoutMapLabels,mapAttribution,shanghaiDistricts,shanghaiMapPlaces,shanghaiMetroLayers,shanghaiName} from './annual-review.js';
 import {basemaps} from './basemaps.js';
 import {periodCounts,addMatches,barHeights,timelineCountLayout,monthlyColumns,frequencyBuckets,periodRange,dateBucket,dateBucketLabel,dateConditionGroups,dateBucketGroups} from './timeline.js';
-import {palettes,resolveTheme,coordinateLabel,highlightLabelColor} from './appearance.js';
+import {palettes,nightPalettes,resolveTheme,coordinateLabel,highlightLabelColor} from './appearance.js';
 import {criterion,toggleCriterion,matchesFilters,matchesCriterionText,matchesCriterionDate,searchCriterion,criterionDisplay,eventParts,eventCriteria,rankSections,toggleRankHidden} from './filters.js';
 import {selectEmoji} from './emoji.js';
 import {placeTypes,placeIndex,regionFromAddress} from './place-categories.js';
@@ -31,7 +31,7 @@ try{
   if(typeof saved?.[key]==='boolean')shanghaiLayerOptions[key]=saved[key];
  }
 }catch{}
-const $=id=>document.getElementById(id);let currentTheme=resolveTheme(localStorage.getItem('atlas-theme'));const colors=()=>palettes[currentTheme];let collapsedSections={};try{collapsedSections=JSON.parse(localStorage.getItem('atlas-sections')||'{}')||{};}catch{}collapsedSections.map??=true;let activeCriteria=[];let rankHidden={places:[],types:[],partners:[],groups:[]};try{const saved=JSON.parse(localStorage.getItem('atlas-rank-hidden-v1'));for(const k of Object.keys(rankHidden))if(Array.isArray(saved?.[k]))rankHidden[k]=saved[k].filter(n=>typeof n==='string');}catch{}let source=[],filtered=[],world,china,cities=[],tab='places',limit=50,points=[];
+const $=id=>document.getElementById(id);let currentTheme=resolveTheme(localStorage.getItem('atlas-theme'));let nightMode=localStorage.getItem('atlas-night')==='1';const colors=()=> (nightMode?nightPalettes:palettes)[currentTheme];let collapsedSections={};try{collapsedSections=JSON.parse(localStorage.getItem('atlas-sections')||'{}')||{};}catch{}collapsedSections.map??=true;let activeCriteria=[];let rankHidden={places:[],types:[],partners:[],groups:[]};try{const saved=JSON.parse(localStorage.getItem('atlas-rank-hidden-v1'));for(const k of Object.keys(rankHidden))if(Array.isArray(saved?.[k]))rankHidden[k]=saved[k].filter(n=>typeof n==='string');}catch{}let source=[],filtered=[],world,china,cities=[],tab='places',limit=50,points=[];
 const countOptionIds=['merge-same-day','split-trip-days','recurring'];
 try{
  const saved=JSON.parse(localStorage.getItem('atlas-count-options'));
@@ -1342,8 +1342,10 @@ map.on('moveend',finishRegionZoom);
 $('map').addEventListener('touchcancel',finishRegionZoom);
 if($('heatmap'))$('heatmap').onchange=()=>draw();if($('aggregate'))$('aggregate').onchange=()=>draw();
 const narrowDrawers=typeof matchMedia==='function'?matchMedia('(max-width:1280px)'):null;
-let rankDrawerOpen=true, lastOpenedDrawer='rank', drawerResizeTimer;
-function resizeMapForDrawers(){
+const overlayDrawers=typeof matchMedia==='function'?matchMedia('(max-width:650px)'):null;
+let rankDrawerOpen=true, lastOpenedDrawer='rank', drawerResizeTimer, drawerScrollPosition=null;
+function updateDrawerLayout(){
+ syncDrawerOverlay();
  clearTimeout(drawerResizeTimer);
  drawerResizeTimer=setTimeout(()=>map.invalidateSize(),180);
 }
@@ -1358,20 +1360,18 @@ function drawer(open,restoreFocus=true){
   lastOpenedDrawer='rank';
   renderRank();
  }
- resizeMapForDrawers();
+ updateDrawerLayout();
  if(restoreFocus){
   const button=(open&&$('drawer').querySelector('.drawertabs .active'))||$('toggle-drawer');
   button.focus?.({preventScroll:true});
  }
 }
 $('toggle-drawer').onclick=()=>drawer(!rankDrawerOpen);
-if(typeof matchMedia==='function'&&matchMedia('(max-width:650px)').matches)drawer(false,false);
 narrowDrawers?.addEventListener?.('change',event=>{
  if(event.matches&&rankDrawerOpen&&settingsOpen)drawer(false,false);
 });
 function renderPlaces(){if(!$('place-list-details').open)return;const q=$('placesearch').value.toLowerCase(),state=$('placestate').value||'all';const pendingAllowed=state==='pending'?new Set(applyRules(source.map(e=>({...details(e),uid:e.uid,start:e.startDate?.toJSDate()||new Date(0)})),rules,true).events.flatMap(e=>e.places).map(n=>normalizePlace(baseCoords.get(normalizePlace(n))?.location||n))):null;const names=[...new Set([...reference.places.map(p=>p.location),...source.flatMap(e=>details(e).places).map(n=>baseCoords.get(normalizePlace(n))?.location||n)])].sort((a,b)=>a.localeCompare(b,'zh-CN'));const lookupCSV=baseCoords;const rows=names.map(name=>{const row=lookupCSV.get(normalizePlace(name)),p=pos(name),disabled=isClosed(row?.valid);return {name,row,p,disabled};}).filter(({name,row,p,disabled})=>(!q||[name,row?.address,row?.type,placeTypes[row?.type],row?.labels,row?.aliases].join(' ').toLowerCase().includes(q))&&(state==='all'?!isPlaceExcluded(row||{location:name},rules):(state==='closed'?disabled:state==='pending'?!p&&pendingAllowed.has(normalizePlace(name))&&!isPlaceExcluded(row||{location:name},rules):state==='exact'?p?.precision==='exact':p&&p.precision!=='exact')));$('placelist').innerHTML=rows.slice(0,placeLimit).map(({name,row,p,disabled})=>(mobileSource?'<div class="placeitem"':'<button class="placeitem" data-edit="'+E(name)+'"')+' title="'+E(row?.address||name)+'">'+(row?.type?'<span class="place-type type-icon" title="'+E((placeTypes[row.type]||row.type))+'" aria-label="'+E(placeTypes[row.type]||row.type)+'">'+E(emojiConfig.typeEmojis?.[row.type]||'📍')+'</span>':'')+'<b>'+E(name)+'</b>'+(disabled?'<span class="closed-badge" title="已停业" aria-label="已停业">'+entityIcon('lock')+'</span>':'')+'<span class="place-coordinates">'+E(coordinateLabel(validCoord(row)?row:p?.precision==='exact'?p:null))+'</span>'+(mobileSource?'</div>':'</button>')).join('')||'<div class="empty">无匹配地点</div>';$('placelist').querySelectorAll('[data-edit]').forEach(el=>el.onclick=()=>edit(el.dataset.edit));$('placemore').hidden=rows.length<=placeLimit;}
 $('placesearch').oninput=$('placestate').onchange=()=>{placeLimit=100;renderPlaces();};$('placemore').onclick=()=>{placeLimit+=100;renderPlaces();};$('addplace').onclick=()=>edit();
-setInterval(async()=>{if(document.documentElement?.dataset?.mobile==='1'||$('editor').open||$('blacklist-editor').open||blacklistBusy||document.hidden)return;try{const r=await fetch('api/places');if(!r.ok)return;const d=await r.json();let configChanged=false;const cr=await fetch('api/config');if(cr.ok){const c=await cr.json();if(c.version!==configVersion){rules=c;emojiConfig=c.emojis;configVersion=c.version;timelineKey='';configChanged=true;renderBlacklist();}}if(d.version!==csvVersion||configChanged){const changed=[...(d.version!==csvVersion?['places']:[]),...(configChanged?['blacklist']:[])];csvVersion=d.version;reference.places=d.places;setupReference();cache.clear();refresh();void updateDataTimes(changed);}}catch{}},15000);
 
 
 
@@ -1380,6 +1380,9 @@ function isMainland(lat,lon){if(!china||lon<72||lon>136||lat<17||lat>55)return f
 function applyTheme(key){
  currentTheme=resolveTheme(key);
  const theme=colors();
+ document.body.setAttribute('data-color-mode',nightMode?'night':'day');
+ document.body.style.setProperty('--surface',theme.surface||'#ffffff');
+ $('night-mode').setAttribute('aria-pressed',String(nightMode));
  const hitInk=highlightLabelColor(theme);
  document.body.style.setProperty('--bar-match-ink',hitInk);
  const selectedInk=highlightLabelColor({highlight:theme.accent,dark:theme.dark});
@@ -1396,9 +1399,9 @@ function applyTheme(key){
  document.querySelectorAll('[data-theme-choice]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.themeChoice===currentTheme)));
  if(china)draw();
 }
-const themeTones=[['canvas','画布'],['soft','浅色'],['mid','中色'],['dark','深色'],['highlight','对比色']];
 function renderThemeOptions(){
- $('theme-options').innerHTML=Object.entries(palettes).map(([key,theme])=>{
+ const themeTones=[['canvas','画布'],['soft',nightMode?'底色':'浅色'],['mid','中色'],['dark',nightMode?'正文':'深色'],['highlight','对比色']];
+ $('theme-options').innerHTML=Object.entries(nightMode?nightPalettes:palettes).map(([key,theme])=>{
  const samples=themeTones.map(([tone,label])=>
   '<span class="theme-sample"><span class="theme-swatch" style="background:'+theme[tone]+'" aria-hidden="true"></span>'+
   '<span>'+label+'</span></span>'
@@ -1439,6 +1442,12 @@ for(const key of ['map','timeline','eventlist']){
  $('collapse-'+key).onclick=()=>setSectionCollapsed(key,!collapsedSections[key]);
  collapseSection(key);
 }
+$('night-mode').onclick=()=>{
+ nightMode=!nightMode;
+ localStorage.setItem('atlas-night',nightMode?'1':'0');
+ applyTheme(currentTheme);
+ if($('theme-list-details').open)renderThemeOptions();
+};
 applyTheme(currentTheme);
 
 function settingsDrawer(open,restoreFocus=true){
@@ -1450,13 +1459,71 @@ function settingsDrawer(open,restoreFocus=true){
  $('settings-drawer').inert=!open;
  $('settings-drawer').setAttribute('aria-hidden',String(!open));
  $('toggle-settings').setAttribute('aria-expanded',String(open));
- resizeMapForDrawers();
+ updateDrawerLayout();
  if(restoreFocus){
   const button=(open&&$('settings-drawer').querySelector('.settings-tabs .active'))||$('toggle-settings');
   button.focus?.({preventScroll:true});
  }
 }
 $('toggle-settings').onclick=()=>settingsDrawer(!settingsOpen);
+function syncDrawerOverlay(){
+ const active=Boolean(overlayDrawers?.matches&&(rankDrawerOpen||settingsOpen));
+ const overlay=$('drawer-scrim'),main=document.querySelector('main');
+ overlay.hidden=!active;
+ if(main)main.inert=active;
+ for(const [id,open] of [['drawer',rankDrawerOpen],['settings-drawer',settingsOpen]]){
+  const panel=$(id);
+  if(active&&open){
+   panel.setAttribute('role','dialog');
+   panel.setAttribute('aria-modal','true');
+  }else{
+   panel.removeAttribute?.('role');
+   panel.removeAttribute?.('aria-modal');
+  }
+ }
+ if(active&&drawerScrollPosition===null){
+  drawerScrollPosition=window.scrollY;
+  document.body.style.setProperty('--drawer-scroll-offset',-drawerScrollPosition+'px');
+  document.body.classList.add('drawer-modal');
+ }else if(!active&&drawerScrollPosition!==null){
+  const top=drawerScrollPosition;
+  drawerScrollPosition=null;
+  document.body.classList.remove('drawer-modal');
+  document.body.style.setProperty('--drawer-scroll-offset','');
+  window.scrollTo({top,behavior:'instant'});
+ }
+}
+$('close-rank-drawer').onclick=()=>drawer(false);
+$('close-settings-drawer').onclick=()=>settingsDrawer(false);
+if(overlayDrawers?.matches)drawer(false,false);
+overlayDrawers?.addEventListener?.('change',syncDrawerOverlay);
+for(const [id,direction,close] of [['drawer',-1,drawer],['settings-drawer',1,settingsDrawer]]){
+ const panel=$(id);
+ let touch,suppressClick=false;
+ panel.addEventListener('pointerdown',event=>{
+  touch=null;
+  suppressClick=false;
+  if(event.pointerType!=='touch'||!event.isPrimary||event.target.closest('input,select,textarea,[contenteditable]'))return;
+  touch={id:event.pointerId,x:event.clientX,y:event.clientY};
+ });
+ panel.addEventListener('pointerup',event=>{
+  if(touch?.id!==event.pointerId)return;
+  const distance=direction*(event.clientX-touch.x),vertical=Math.abs(event.clientY-touch.y);
+  touch=null;
+  if(distance<48||distance<1.6*vertical)return;
+  suppressClick=true;
+  event.preventDefault();
+  close(false);
+ });
+ panel.addEventListener('pointercancel',()=>{touch=null;});
+ panel.addEventListener('click',event=>{
+  if(!suppressClick||event.detail===0)return;
+  suppressClick=false;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+ },true);
+}
+
 document.addEventListener?.('keydown',e=>{
  if(e.key!=='Escape'||document.querySelector('dialog[open]'))return;
  if(settingsOpen&&(!rankDrawerOpen||lastOpenedDrawer==='settings'))settingsDrawer(false);
@@ -1825,8 +1892,8 @@ $('trip-share-save').onclick=async()=>{
  const partners=$('trip-share-people').checked?event.partners:[];
  const {start,end}=tripDates(event);
  const dates=overview?tripDateRange(start,end):groups[0]?.day.label;
- const css=getComputedStyle($('trip-dialog'));
- const palette=Object.fromEntries(['deep','muted','soft','accent'].map(key=>[key,css.getPropertyValue('--'+key).trim()]));
+ const {dark:deep,muted,soft,accent}=palettes[currentTheme];
+ const palette={deep,muted,soft,accent};
  const title=tripPlace(event);
  const routes=!$('trip-share-lines').disabled&&$('trip-share-lines').checked?lines:[];
  const map=tripExportMap,tiles=tripExportTiles,dialog=$('trip-share-dialog');
@@ -2283,17 +2350,17 @@ function renderAnnual(year,custom=$('annual-year-select').value==='range'){
  const isCompact=()=>nationalMap.clientWidth>0&&nationalMap.clientWidth<480;
  const labelSize=()=>nationalMap.clientWidth?Math.max(20,Math.min(46,Math.round(11200/nationalMap.clientWidth))):20;
  let compact=isCompact(),nationalFont=labelSize();
- const paintNational=(target,fontSize)=>{
+ const paintNational=(target,fontSize,colors=palette)=>{
   const {focusVisitedCities,includeSouthChinaSea}=reviewMapOptions;
-  drawAnnualMap(target,china,cityBoundaries,report.visits,palette,
+  drawAnnualMap(target,china,cityBoundaries,report.visits,colors,
    focusVisitedCities||includeSouthChinaSea,focusVisitedCities,{fontSize});
  };
  const renderNational=()=>{
   $('annual-include-south-china-sea').disabled=reviewMapOptions.focusVisitedCities;
   paintNational(nationalMap,nationalFont);
  };
- const paintShanghai=(target,stacked)=>drawShanghaiMap(target,cityBoundaries,shanghaiLandmarks,report.shanghaiPoints,
-  {includeChongming:reviewMapOptions.includeChongming,innerRing:reviewMapOptions.innerRing,topPlaces,palette,stacked});
+ const paintShanghai=(target,stacked,colors=palette)=>drawShanghaiMap(target,cityBoundaries,shanghaiLandmarks,report.shanghaiPoints,
+  {includeChongming:reviewMapOptions.includeChongming,innerRing:reviewMapOptions.innerRing,topPlaces,palette:colors,stacked});
  const renderShanghai=()=>{
   tooltip.hidden=true;
   shanghaiMap.parentElement?.classList.toggle('annual-shanghai-stacked',compact);
@@ -2346,11 +2413,12 @@ function renderAnnual(year,custom=$('annual-year-select').value==='range'){
  $('annual-export').disabled=false;
  $('annual-export').onclick=()=>{
   const stats=amount?[...report.stats,['地铁费用',amount()]]:report.stats;
-  const national=nationalFont===20?nationalMap:document.createElement('canvas');
-  const shanghai=compact?document.createElement('canvas'):shanghaiMap;
-  if(national!==nationalMap)paintNational(national,20);
-  if(shanghai!==shanghaiMap)paintShanghai(shanghai,false);
-  return exportAnnual({...report,stats,highlight},national,shanghai,palette);
+  const paper=palettes[currentTheme];
+  const national=!nightMode&&nationalFont===20?nationalMap:document.createElement('canvas');
+  const shanghai=nightMode||compact?document.createElement('canvas'):shanghaiMap;
+  if(national!==nationalMap)paintNational(national,20,paper);
+  if(shanghai!==shanghaiMap)paintShanghai(shanghai,false,paper);
+  return exportAnnual({...report,stats,highlight},national,shanghai,paper);
  };
 }
 async function encodePng(image){
