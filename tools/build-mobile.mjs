@@ -58,8 +58,8 @@ await fs.writeFile(path.join(out, 'manifest.webmanifest'), JSON.stringify({
 }, null, 2));
 
 // service worker
-const optionalAssets=[fullBoundaries,'data/world.json','data/shanghai-landmarks.json','vendor/leaflet-heat.js'];
-const files = ['index.html', 'app.js', 'data-provider.js', 'mobile-readonly.js', 'manifest.webmanifest', 'data/city-index.json',
+const optionalAssets=[fullBoundaries,'data/china.json','data/city-index.json','data/world.json','data/shanghai-landmarks.json','vendor/leaflet-heat.js'];
+const files = ['index.html', 'app.js', 'data-provider.js', 'mobile-readonly.js', 'manifest.webmanifest',
   ...staticFiles.filter(file=>!optionalAssets.includes(file))];
 if (!DATA_LESS) files.push(...atlasFiles.map(name=>'data/'+name));
 const hash=createHash('sha256');

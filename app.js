@@ -2,7 +2,7 @@ import {annualLegend,cityKey,drawAnnualImage,drawAnnualMap,drawShanghaiMap,layou
 import {basemaps} from './lib/basemaps.js';
 import {periodCounts,addMatches,barHeights,timelineCountLayout,monthlyColumns,frequencyBuckets,periodRange,dateBucket,dateBucketLabel,dateConditionGroups,dateBucketGroups} from './lib/timeline.js';
 import {palettes,nightPalettes,resolveTheme,coordinateLabel,highlightLabelColor} from './lib/appearance.js';
-import {criterion,toggleCriterion,matchesFilters,matchesCriterionText,matchesCriterionDate,searchableEventNote,searchCriterion,criterionDisplay,eventParts,eventCriteria,rankSections,toggleRankHidden} from './lib/filters.js';
+import {criterion,toggleCriterion,createEventMatcher,matchesCriterionText,matchesCriterionDate,searchableEventNote,searchCriterion,criterionDisplay,eventParts,eventCriteria,rankSections,toggleRankHidden} from './lib/filters.js';
 import {selectEmoji} from './lib/emoji.js';
 import {placeTypes,placeIndex,regionFromAddress} from './lib/place-categories.js';
 import {parseCalendar,expand,details,escape as E,validCoord,setPlaceResolver} from './lib/core.js';
@@ -33,13 +33,13 @@ try{
   if(typeof saved?.[key]==='boolean')shanghaiLayerOptions[key]=saved[key];
  }
 }catch{}
-const $=id=>document.getElementById(id);let currentTheme=resolveTheme(localStorage.getItem('atlas-theme'));let nightMode=localStorage.getItem('atlas-night')==='1';const colors=()=> (nightMode?nightPalettes:palettes)[currentTheme];let collapsedSections={};try{collapsedSections=JSON.parse(localStorage.getItem('atlas-sections')||'{}')||{};}catch{}collapsedSections.map??=true;let activeCriteria=[];let rankHidden={places:[],types:[],partners:[],groups:[]};try{const saved=JSON.parse(localStorage.getItem('atlas-rank-hidden-v1'));for(const k of Object.keys(rankHidden))if(Array.isArray(saved?.[k]))rankHidden[k]=saved[k].filter(n=>typeof n==='string');}catch{}let source=[],filtered=[],world,china,cities=[],tab='places',limit=50,points=[];
+const $=id=>document.getElementById(id);let currentTheme=resolveTheme(localStorage.getItem('atlas-theme'));let nightMode=localStorage.getItem('atlas-night')==='1';const colors=()=> (nightMode?nightPalettes:palettes)[currentTheme];const collapsedSections={map:true,timeline:true,eventlist:false};let activeCriteria=[];let rankHidden={places:[],types:[],partners:[],groups:[]};try{const saved=JSON.parse(localStorage.getItem('atlas-rank-hidden-v1'));for(const k of Object.keys(rankHidden))if(Array.isArray(saved?.[k]))rankHidden[k]=saved[k].filter(n=>typeof n==='string');}catch{}let source=[],filtered=[],world,china,cities=[],tab='places',limit=50,points=[];
 const countOptionIds=['merge-same-day','split-trip-days','recurring'];
 try{
  const saved=JSON.parse(localStorage.getItem('atlas-count-options'));
  for(const id of countOptionIds)if(typeof saved?.[id]==='boolean')$(id).checked=saved[id];
 }catch{}
-let countedRows=[];
+let countedRows,filteredView,panelRefreshTimer;
 let draftCriterion,appliedCriteria=[];
 const cityBoundaryParts=new Map();
 let allCityBorders=false,cityIndexRequest,cityBoundaries=null,cityBoundaryRequest,boundaryLayer=null,overviewLayers=[],regionLabels=[],overviewLevel='',timelineKey='',timelineEvents=[];
@@ -63,14 +63,27 @@ function setupGaz(){gaz=[];for(const f of world?.features||[]){const p=f.propert
 function locate(name){const m=name.match(/(?:geo:)?(-?\d{1,2}\.\d{3,})\s*[,，;]\s*(-?\d{1,3}\.\d{3,})/i);if(m&&validCoord({lat:m[1],lon:m[2]}))return {...inferRegion(+m[1],+m[2]),lat:+m[1],lon:+m[2],precision:'exact'};const key=normalizePlace(name);const base=baseCoords.get(key);if(base){if(!validCoord(base)){const approx=lookup([base.city,base.province,base.country].filter(Boolean).join(' '))||lookup(name);return approx?{...approx,...Object.fromEntries(['country','province','city'].filter(k=>base[k]).map(k=>[k,base[k]]))}:null;}let p={lat:Number(base.lat),lon:Number(base.lon),precision:'exact'};[p.lat,p.lon]=toWgs(p.lat,p.lon,base.datum||$('datum').value);const inferred=base.country&&base.province&&base.city?{}:inferRegion(p.lat,p.lon);return {...inferred,...Object.fromEntries(['country','province','city'].filter(k=>base[k]).map(k=>[k,base[k]])),...p};}return lookup(name);}
 function lookup(name){const s=normalize(name);let hits=gaz.filter(p=>p.terms.some(t=>{if(!t||t.length<2)return false;const term=normalize(t);if(s===term)return true;const official=/省$|市$|区$|县$|自治区$|特别行政区$/.test(t);return official&&s.startsWith(term);}));hits.sort((a,b)=>({city:3,province:2,country:1}[b.precision]-{city:3,province:2,country:1}[a.precision]));if(!hits.length)return null;const best=hits[0],peers=hits.filter(x=>x.precision===best.precision);if(peers.length>1){const qualified=peers.filter(x=>x.province&&s.includes(normalize(x.province.replace(/省|市/g,''))));if(qualified.length!==1)return null;return qualified[0];}return best;}
 let cache=new Map();function pos(name){if(!cache.has(name))cache.set(name,locate(name));return cache.get(name);}
-let timeMode='overview',overviewUnit='year',selectedRange=[];
+let timeMode='overview',overviewUnit='year',selectedRange=[],timelineYearsDirty=true;
 const focusView=()=>timeMode==='focus';
 const dateInputValue=date=>date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0');
 function setRecentRange(){
  const now=new Date(),from=new Date(now.getFullYear()-1,now.getMonth(),now.getDate()+1);
  selectedRange=[dateInputValue(from),dateInputValue(now)];
 }
-function load(text,keepRange=false,deferTimeline=false){const next=parseCalendar(text);const dates=next.map(e=>e.startDate?.toJSDate()).filter(d=>d&&!isNaN(d));if(!dates.length)throw Error('没有有效事件');source=next;$('timeline-range').disabled=false;if(!keepRange||!selectedRange.length){setRecentRange();activeCriteria=[];}timelineKey='';setupYears();refresh({timeline:!deferTimeline,fitBeforeDraw:deferTimeline&&!keepRange});if(!keepRange&&!deferTimeline)fitPoints();}
+function load(text,keepRange=false,startup=false){
+ const next=parseCalendar(text);
+ if(!next.some(event=>Number.isFinite(event.startDate?.toJSDate().getTime())))throw Error('没有有效事件');
+ source=next;
+ $('timeline-range').disabled=false;
+ if(!keepRange||!selectedRange.length){
+  setRecentRange();
+  activeCriteria=[];
+ }
+ timelineKey='';
+ timelineYearsDirty=true;
+ refresh({deferPanels:startup});
+ if(!keepRange&&!startup)fitPoints();
+}
 let rangeCache;
 function rangeEvents(from,to){
  const recurring=$('recurring').checked, exclude=$('exclude').checked;
@@ -82,44 +95,54 @@ function rangeEvents(from,to){
  }
  return rangeCache;
 }
-function refresh({timeline=true,fitBeforeDraw=false}={}){
+function searchEventCriterion(value,events){
+ const scope=$('searchscope').value||'all';
+ const canonical=(scope==='all'||scope==='place')?baseCoords.get(normalizePlace(value))?.location||value:value;
+ return searchCriterion(scope,canonical,events);
+}
+function refresh({timeline=true,deferPanels=false}={}){
  if(!selectedRange.length)return;
+ clearTimeout(panelRefreshTimer);
  const [start,end]=selectedRange;
  const from=new Date(start+'T00:00:00'),to=new Date(end+'T23:59:59.999');
  const rangeLabel=start.replaceAll('-','/')+'-'+end.replaceAll('-','/');
- $('timeline-range-label').textContent=rangeLabel;
+ setSectionTitle('timeline-range-label',rangeLabel);
  const result=rangeEvents(from,to);
  const draftRaw=$('search').value.trim();
- const searchScope=$('searchscope').value||'all';
- // 搜索时也把别名映射到 location，保证用别名也能搜到（地点/全部范围）
- const draft=(draftRaw&&(searchScope==='all'||searchScope==='place'))?(baseCoords?.get(normalizePlace(draftRaw))?.location||draftRaw):draftRaw;
- draftCriterion=draft?searchCriterion(searchScope,draft,result.events):null;
+ draftCriterion=draftRaw?searchEventCriterion(draftRaw,result.events):null;
  appliedCriteria=draftCriterion&&!activeCriteria.some(c=>c.id===draftCriterion.id)?[...activeCriteria,draftCriterion]:activeCriteria;
  const dates=appliedCriteria.filter(c=>c.kind==='time');
  const others=appliedCriteria.filter(c=>c.kind!=='time');
  $('timeline-range').setAttribute('aria-label','修改时间范围 '+rangeLabel);
- const scoped=dates.length?result.events.filter(event=>matchesFilters(event,dates,placeType)):result.events;
- filtered=others.length?scoped.filter(event=>matchesFilters(event,others,placeType)):scoped;
- countedRows=[...occurrenceDays(filtered,from,to,$('split-trip-days').checked,true)];
- $('map-title').textContent='地点 · '+new Set(countedRows.flatMap(row=>row.places)).size;
+ const scoped=dates.length?result.events.filter(createEventMatcher(dates,placeType)):result.events;
+ filtered=others.length?scoped.filter(createEventMatcher(others,placeType)):scoped;
+ countedRows=null;
+ filteredView={events:result.events,scoped:dates.length?scoped:null,matched:others.length?filtered:null,from,to};
  limit=50;
  $('status').textContent=result.errors||result.capped?'部分重复事件无法完整展开，请缩小时间范围。':'';
  renderDateConditions(dates);
- renderTimeStats(result.events,dates.length?scoped:null,others.length?filtered:null,from,to);
- if(focusView()){
-  focusChartData={events:result.events,scoped:dates.length?scoped:null,matched:others.length?filtered:null,from,to};
-  renderFocusChart();
- }else{
-  overviewChartData={events:result.events,scoped:dates.length?scoped:null,matched:others.length?filtered:null};
-  if(timeline)renderOverviewChart();
- }
- buildPoints();
- if(rankDrawerOpen)renderRank();
  renderEvents();
+ renderFilterChips();
+ if(deferPanels)panelRefreshTimer=setTimeout(()=>refreshVisiblePanels(timeline),110);
+ else refreshVisiblePanels(timeline);
+}
+function renderTimePanel(timeline=true){
+ if(collapsedSections.timeline||!filteredView)return;
+ const {events,scoped,matched,from,to}=filteredView;
+ renderTimeStats(events,scoped,matched,from,to);
+ if(focusView())renderFocusChart();
+ else if(timeline)renderOverviewChart();
+}
+function refreshVisiblePanels(timeline){
+ renderTimePanel(timeline);
+ if(rankDrawerOpen)renderRank();
+ renderMapResults();
  if(settingsOpen&&activePanel==='manage')renderPlaces();
- fitSectionTools();
- if(fitBeforeDraw)fitPoints();
- draw();
+}
+function currentCountedRows(){
+ if(!countedRows)countedRows=filteredView
+  ?[...occurrenceDays(filtered,filteredView.from,filteredView.to,$('split-trip-days').checked,true)]:[];
+ return countedRows;
 }
 const rangeDialog=$('timeline-range-dialog');
 const rangeFields=[$('from'),$('to')];
@@ -156,11 +179,17 @@ function activityStats(events,rows,places=new Set(rows.flatMap(row=>row.places))
   ['同伴',new Set(rows.flatMap(row=>row.event.partners)).size],
  ];
 }
+let renderedDateCriteria;
 function renderDateConditions(criteria){
+ const signature=JSON.stringify(criteria.map(c=>c.id));
+ if(signature===renderedDateCriteria)return;
+ renderedDateCriteria=signature;
  const chips=$('timeline-date-conditions');
  const groups=dateConditionGroups(criteria);
  chips.hidden=!groups.length;
+ const indicator=$('timeline-range-indicator'),wasHidden=indicator.hidden;
  updateFilterHint('timeline-range-indicator',groups.map(group=>group.label));
+ if(indicator.hidden!==wasHidden)scheduleSectionTools();
  chips.innerHTML=groups.map(({label},index)=>'<button type="button" data-remove-date="'+index
   +'" aria-label="'+E('移除日期条件：'+label)+'"><strong>'+E(label)+'</strong>'+entityIcon('dialog-close','filter-chip-dismiss')+'</button>').join('');
  for(const button of chips.querySelectorAll('[data-remove-date]'))button.onclick=()=>{
@@ -168,7 +197,7 @@ function renderDateConditions(criteria){
   activeCriteria=activeCriteria.filter(c=>c.kind!=='time'||c.scope!==scope||!values.includes(Number(c.value)));
   refresh();
   fitPoints();
-  (chips.querySelector('[data-remove-date="'+index+'"]')||chips.querySelector('[data-remove-date]')||$('timeline-range')).focus?.({preventScroll:true});
+  (chips.querySelector('[data-remove-date="'+index+'"]')||chips.querySelector('[data-remove-date]')||$('search')).focus?.({preventScroll:true});
  };
 }
 function renderTimeStats(events,scoped,matched,from,to){
@@ -196,13 +225,12 @@ function renderTimeStats(events,scoped,matched,from,to){
  stats.style.setProperty('--timeline-stat-columns',weights.join(' '));
  fitTimeStatValues();
 }
-let focusChartData;
 let focusUnit='month';
 const frequencyButtons=document.querySelectorAll('[data-frequency]');
 const dateCriterion=(unit,value)=>criterion('time',String(value),{scope:unit,label:dateBucketLabel(value,unit)});
 function renderFocusChart(){
- if(!focusChartData)return;
- const {events,scoped,matched,from,to}=focusChartData;
+ if(collapsedSections.timeline||!filteredView)return;
+ const {events,scoped,matched,from,to}=filteredView;
  const rows=frequencyBuckets(events,scoped,matched,focusUnit,from,to);
  const bars=$('day-frequency-bars');
  const peak=Math.max(1,...rows.map(row=>row.total));
@@ -211,11 +239,11 @@ function renderFocusChart(){
  bars.innerHTML=rows.map(row=>{
   const {value,label,title,total,scoped,matched:hit}=row;
   const active=activeCriteria.some(c=>c.id===dateCriterion(focusUnit,value).id);
-  const description=barDescription(title,total,matched?hit:null,focusChartData.scoped?scoped:null);
+  const description=barDescription(title,total,matched?hit:null,filteredView.scoped?scoped:null);
   const shortLabel=focusUnit==='year'?'&#39;'+label.slice(-2):label;
   return '<button type="button" class="yearbar frequency-bar'+(active?' selected':'')+'" data-frequency-bucket="'+value
    +'" data-total="'+total+'" data-scoped="'+scoped+'" data-matched="'+hit+'" aria-pressed="'+active+'" title="'+E(description)+'" aria-label="'+E(description)+'">'
-   +timelineBar({total,inRange:total,scoped:focusChartData.scoped?scoped:null,matched:matched?hit:null,peak,label,shortLabel})+'</button>';
+   +timelineBar({total,inRange:total,scoped:filteredView.scoped?scoped:null,matched:matched?hit:null,peak,label,shortLabel})+'</button>';
  }).join('');
  for(const bar of bars.querySelectorAll('[data-frequency-bucket]'))bar.onclick=()=>{
   const value=Number(bar.dataset.frequencyBucket);
@@ -297,7 +325,7 @@ function typeLabel(type){return Object.hasOwn(placeTypes,type) ? placeTypes[type
 const rankKinds={places:'place',types:'placeType',partners:'person',groups:'group'};
 function counts(field){
  const countsByName=field==='groups'?occurrenceCounts(filtered,event=>[eventParts(event.title).group].filter(Boolean),false)
-  :occurrenceCounts(countedRows,({event,places})=>field==='types'?places.map(placeType)
+  :occurrenceCounts(currentCountedRows(),({event,places})=>field==='types'?places.map(placeType)
    :field==='places'?places:event.partners,$('merge-same-day').checked);
  return [...countsByName].sort((a,b)=>b[1]-a[1]);
 }
@@ -416,8 +444,8 @@ function revealTimeline(){
 function selectEventRange(event){
  const {start,end}=tripDates(event);
  selectedRange=[start,end];
- if(collapsedSections.timeline)setSectionCollapsed('timeline',false);
  setTimeMode('focus');
+ if(collapsedSections.timeline)setSectionCollapsed('timeline',false);
  if(typeof matchMedia==='function')revealTimeline();
 }
 function renderEvents(){
@@ -483,7 +511,6 @@ function renderEvents(){
  container.querySelectorAll('[data-filter-event]').forEach(el=>el.onclick=()=>{activeCriteria=eventCriteria(activeCriteria,el.dataset.filterEvent);refresh();fitPoints();});
  container.querySelectorAll('[data-trip-event]').forEach(el=>el.onclick=()=>openTrips(rows[+el.dataset.tripEvent]));
  scheduleEventLayout();
- renderFilterChips();
 }
 function renderFilterChips(){
  const container=$('activefilters');
@@ -495,6 +522,7 @@ function renderFilterChips(){
  };
  container.innerHTML=activeCriteria.map((c,i)=>c.kind==='time'?'':chip(c,'data-remove-filter="'+i+'"')).join('')
   +(draftCriterion&&!activeCriteria.some(c=>c.id===draftCriterion.id)?chip(draftCriterion,'data-remove-draft'):'');
+ $('filter-summary').hidden=!container.innerHTML&&$('timeline-date-conditions').hidden;
  container.querySelectorAll('[data-remove-filter]').forEach(el=>el.onclick=()=>{
   activeCriteria.splice(+el.dataset.removeFilter,1);
   refresh();
@@ -574,10 +602,11 @@ $('ics').onchange=async event=>{
  }catch(error){status.textContent=error.message||'无法读取日历';}
 };
 function buildPoints(){
- const level=mapLevel(),byKey=new Map();
- const totals=occurrenceCounts(countedRows,({places})=>{
+ const level=mapLevel(),byKey=new Map(),placeNames=new Set();
+ const totals=occurrenceCounts(currentCountedRows(),({places})=>{
   const keys=[];
   for(const name of places){
+   placeNames.add(name);
    const p=pos(name);
    if(!p)continue;
    const label=level==='place'?name:p[level];
@@ -593,6 +622,13 @@ function buildPoints(){
   return keys;
  },$('merge-same-day').checked);
  points=[...byKey.values()].map(p=>({...p,count:totals.get(p.regionKey)}));
+ setSectionTitle('map-title','地点 · '+placeNames.size);
+}
+function renderMapResults(fit=false){
+ if($('map-body').hidden)return;
+ buildPoints();
+ draw();
+ if(fit)fitPoints();
 }
 function fitPoints(){
  if($('map-body').hidden)return;
@@ -813,8 +849,33 @@ function draw(){if($('map-body').hidden)return;clearTouchPreview();shanghaiLayer
  placeToggles.hidden=mapLevel()!=='place';
  for(const input of placeToggles.querySelectorAll('input'))input.checked=$(input.name).checked;const heat=Boolean($('heatmap')&&$('heatmap').checked)&&mapLevel()==='place';if(mapLevel()!=='place'){drawOverview();return;}map.options.zoomSnap=1;map.setMinZoom(0);map.setMaxZoom(18);overviewLevel='';clearOverview();if(!tiles||!map.hasLayer(tiles))setProvider(false);$('provider').disabled=false;$('provider').style.display='';if(heatLayer)map.removeLayer(heatLayer);drawPlaceMarkers(heat);}
 map.on('click',e=>{clearTouchPreview();if(!pickMode)return;pickMode=false;const p=basemaps[$('provider').value]?.gcj02&&mapLevel()==='place'&&isMainland(e.latlng.lat,e.latlng.lng)?gcjToWgs(e.latlng.lat,e.latlng.lng):[e.latlng.lat,e.latlng.lng];$('editform').elements.lat.value=p[0].toFixed(6);$('editform').elements.lon.value=p[1].toFixed(6);$('editform').elements.datum.value='wgs84';$('editor').showModal();$('status').textContent='已选取坐标，点击保存完成标注';});
-$('pickpoint').onclick=()=>{if(mapLevel()!=='place'){$('level').value='place';buildPoints();}if($('map-body').hidden)setSectionCollapsed('map',false);else{draw();fitPoints();}pickMode=true;$('editor').close();$('status').textContent='请在地图上点击精确位置（坐标仅存本机）';};
-$('reset').onclick=()=>mapLevel()==='shanghai'?fitOverview():fitPoints();$('level').onchange=async()=>{const lv=mapLevel();if(lv==='shanghai'){await enterShanghaiMap();return;}if(lv==='country'&&!world){$('status').textContent='正在加载国家边界…';try{world=await fetchJsonWithProgress('data/world.json','国家边界');setupGaz();cache.clear();}catch{}finally{$('status').textContent='';}}if(mapLevel()!==lv)return;buildPoints();draw();fitPoints();};$('exclude').onchange=refresh;$('search').oninput=()=>{refresh();};$('searchscope').onchange=()=>refresh();$('searchform').onsubmit=e=>{e.preventDefault();const value=$('search').value.trim();if(!value)return;const c=searchCriterion($('searchscope').value||'all',value,rangeCache?.events||[]);if(!activeCriteria.some(x=>x.id===c.id))activeCriteria.push(c);$('search').value='';refresh();fitPoints();};$('more').onclick=()=>{limit+=50;renderEvents();};$('unselect').onclick=()=>{activeCriteria=activeCriteria.filter(c=>c.kind==='time');$('search').value='';limit=50;refresh();};document.querySelectorAll('[data-panel]').forEach(el=>el.onclick=()=>{tab=el.dataset.tab;document.querySelectorAll('[data-panel]').forEach(x=>x.classList.toggle('active',x===el));renderRank();});document.querySelectorAll('[data-settings-panel]').forEach(el=>el.onclick=()=>{activePanel=el.dataset.settingsPanel;document.querySelectorAll('[data-settings-panel]').forEach(x=>x.classList.toggle('active',x===el));$('settings-drawer').querySelectorAll('[data-content]').forEach(x=>x.hidden=x.dataset.content!==activePanel);if(activePanel==='manage')renderPlaces();});
+$('pickpoint').onclick=async()=>{
+ $('level').value='place';
+ if($('map-body').hidden)await setSectionCollapsed('map',false);
+ else await loadMainMap();
+ if($('map-body').hidden||mapLevel()!=='place')return;
+ pickMode=true;
+ $('editor').close();
+ $('status').textContent='请在地图上点击精确位置（坐标仅存本机）';
+};
+$('reset').onclick=()=>{if(mapLevel()==='shanghai')fitOverview();else renderMapResults(true);};
+$('level').onchange=loadMainMap;
+$('exclude').onchange=refresh;
+function previewSearch(event){if(!event?.isComposing)refresh({deferPanels:true});}
+$('search').oninput=$('search').oncompositionend=$('searchscope').onchange=previewSearch;
+$('searchform').onsubmit=event=>{
+ event.preventDefault();
+ const value=$('search').value.trim();
+ if(!value)return;
+ const criterion=searchEventCriterion(value,rangeCache?.events||[]);
+ if(!activeCriteria.some(item=>item.id===criterion.id))activeCriteria.push(criterion);
+ $('search').value='';
+ refresh();
+ fitPoints();
+};
+$('more').onclick=()=>{limit+=50;renderEvents();};
+$('unselect').onclick=()=>{activeCriteria=activeCriteria.filter(c=>c.kind==='time');$('search').value='';refresh();};
+document.querySelectorAll('[data-panel]').forEach(el=>el.onclick=()=>{tab=el.dataset.tab;document.querySelectorAll('[data-panel]').forEach(x=>x.classList.toggle('active',x===el));renderRank();});document.querySelectorAll('[data-settings-panel]').forEach(el=>el.onclick=()=>{activePanel=el.dataset.settingsPanel;document.querySelectorAll('[data-settings-panel]').forEach(x=>x.classList.toggle('active',x===el));$('settings-drawer').querySelectorAll('[data-content]').forEach(x=>x.hidden=x.dataset.content!==activePanel);if(activePanel==='manage')renderPlaces();});
 try{
  const pref=JSON.parse(localStorage.getItem('atlas-event-columns')||'{}');
  for(const key of Object.keys(eventColumns))eventColumns[key]=pref[key]!==false;
@@ -839,20 +900,27 @@ function editBlacklist(index=-1){blacklistEditing=index;blacklistEditVersion=con
 $('blacklist-form').onsubmit=async e=>{e.preventDefault();const f=e.target;const r={type:f.elements.type.value,enabled:f.elements.enabled.checked?'1':'0',match_type:f.elements.match_type.value,value:f.elements.value.value,reason:f.elements.reason.value};if(r.type==='place'&&r.match_type==='uid'){$('blacklist-form-error').textContent='UID 仅适用于事件';return;}$('save-blacklist').disabled=true;try{const rows=structuredClone(rules.blacklist||[]);if(blacklistEditing<0)rows.push(r);else rows[blacklistEditing]=r;if(await persistBlacklist(rows,blacklistEditVersion))$('blacklist-editor').close();else $('blacklist-form-error').textContent=$('blacklist-error').textContent;}finally{$('save-blacklist').disabled=false;}};
 $('cancel-blacklist').onclick=()=>$('blacklist-editor').close();$('add-blacklist').onclick=()=>editBlacklist();$('blacklist-type').onchange=$('blacklist-search').oninput=renderBlacklist;
 $('datum').onchange=()=>{localStorage.setItem('atlas-datum-v2',$('datum').value);cache.clear();refresh();};
-function setupYears(){
- const years=source.map(e=>e.startDate?.toJSDate().getFullYear()).filter(Number.isFinite);
- yearMin=Math.min(...years);
- yearMax=Math.max(new Date().getFullYear(),...years);
- if($('split-trip-days').checked){
-  for(const event of source){
-   if(!isTrip({title:event.summary}))continue;
+function ensureTimelineYears(){
+ if(!timelineYearsDirty)return;
+ let min=Infinity,max=new Date().getFullYear();
+ const splitTrips=$('split-trip-days').checked;
+ for(const event of source){
+  const year=event.startDate?.toJSDate().getFullYear();
+  if(Number.isFinite(year)){
+   min=Math.min(min,year);
+   max=Math.max(max,year);
+  }
+  if(splitTrips&&isTrip({title:event.summary})){
    try{
     const end=event.endDate?.toJSDate();
     const last=new Date(+end-1).getFullYear();
-    if(last>yearMax)yearMax=last;
+    if(last>max)max=last;
    }catch{}
   }
  }
+ yearMin=Number.isFinite(min)?min:max;
+ yearMax=max;
+ timelineYearsDirty=false;
 }
 function timelineMonthBounds(){
  const byTripDays=$('split-trip-days').checked;
@@ -868,10 +936,17 @@ function timelineMonthBounds(){
 for(const id of countOptionIds)$(id).onchange=()=>{
  try{localStorage.setItem('atlas-count-options',JSON.stringify(Object.fromEntries(countOptionIds.map(id=>[id,$(id).checked]))));}catch{}
  if(!source.length)return;
- if(id==='split-trip-days')setupYears();
+ if(id==='split-trip-days')timelineYearsDirty=true;
  refresh({timeline:id!=='merge-same-day'});
 };
-function ensureTimeline(){const key=JSON.stringify([source.length,yearMin,yearMax,$('recurring').checked,$('exclude').checked,rules,csvVersion]);if(key!==timelineKey){timelineEvents=applyRules(expand(source,new Date(yearMin,0,1),new Date(yearMax,11,31,23,59,59,999),$('recurring').checked).events,rules,$('exclude').checked,new Set()).events;timelineKey=key;}}
+function ensureTimeline(){
+ ensureTimelineYears();
+ const recurring=$('recurring').checked,exclude=$('exclude').checked;
+ const key=JSON.stringify([source.length,yearMin,yearMax,recurring,exclude,rules,csvVersion]);
+ if(key===timelineKey)return;
+ timelineEvents=applyRules(expand(source,new Date(yearMin,0,1),new Date(yearMax,11,31,23,59,59,999),recurring).events,rules,exclude,new Set()).events;
+ timelineKey=key;
+}
 function heightPreference(id,{min,max,fallback,apply}){
  const input=$(id),label=$(id+'-label'),handle=$(id+'-handle'),key='atlas-'+id;
  handle.setAttribute('aria-valuemin',String(min));
@@ -977,20 +1052,20 @@ function timelineBar({total,inRange,scoped,matched,peak,label,shortLabel}){
 const periodIndex=(date,monthly)=>Number(date.slice(0,4))*(monthly?12:1)+(monthly?Number(date.slice(5,7))-1:0);
 const monthLabel=index=>Math.floor(index/12)+'-'+String(index%12+1).padStart(2,'0');
 const overviewBars=$('yearbars');
-let overviewChartData,overviewBounds,overviewMonths;
+let overviewBounds,overviewMonths;
 function renderOverviewChart(){
- if(focusView()||!overviewChartData)return;
+ if(collapsedSections.timeline||focusView()||!filteredView)return;
  ensureTimeline();
  const monthly=overviewUnit==='month';
  const [min,max]=monthly?timelineMonthBounds():[yearMin,yearMax];
  overviewBounds=[min,max];
  const [a,b]=selectedRange.map(date=>periodIndex(date,monthly));
  const periods=periodCounts(timelineEvents,monthly,min,max);
- addMatches(periods,overviewChartData.events,monthly,min,'inRange');
- const hasDates=Boolean(overviewChartData.scoped);
- if(hasDates)addMatches(periods,overviewChartData.scoped,monthly,min,'scoped');
- const hasMatches=Boolean(overviewChartData.matched);
- if(hasMatches)addMatches(periods,overviewChartData.matched,monthly,min);
+ addMatches(periods,filteredView.events,monthly,min,'inRange');
+ const hasDates=Boolean(filteredView.scoped);
+ if(hasDates)addMatches(periods,filteredView.scoped,monthly,min,'scoped');
+ const hasMatches=Boolean(filteredView.matched);
+ if(hasMatches)addMatches(periods,filteredView.matched,monthly,min);
  const peak=Math.max(1,...periods.map(p=>p.total));
  $('timeline-track').classList.toggle('monthly',monthly);
  $('timeline-month-axis').hidden=!monthly;
@@ -1064,6 +1139,7 @@ function setTimeMode(mode){
  toggleTimelineButton($('timeline-mode-overview'),!focus);
  toggleTimelineButton($('timeline-mode-focus'),focus);
  refresh();
+ scheduleSectionTools();
 }
 $('timeline-mode-overview').onclick=()=>setTimeMode('overview');
 $('timeline-mode-focus').onclick=()=>setTimeMode('focus');
@@ -1089,7 +1165,25 @@ $('timeline-all').onclick=()=>{
  }
  setTimeRange(dateInputValue(new Date(first)),dateInputValue(new Date(Math.max(last,Date.now()))));
 };
-
+let sectionLayoutPending=false;
+function setSectionTitle(id,text){
+ const element=$(id);
+ if(element.textContent===text)return;
+ element.textContent=text;
+ scheduleSectionTools();
+}
+function scheduleSectionTools(){
+ if(typeof requestAnimationFrame!=='function'){
+  fitSectionTools();
+  return;
+ }
+ if(sectionLayoutPending)return;
+ sectionLayoutPending=true;
+ requestAnimationFrame(()=>{
+  sectionLayoutPending=false;
+  fitSectionTools();
+ });
+}
 function fitSectionTools(){
  for(const id of ['timeline-header','map-header']){
   const header=$(id),title=header.querySelector('.header-title'),tools=header.querySelector('.header-tools');
@@ -1123,7 +1217,7 @@ if(typeof ResizeObserver==='function'){
  const observer=new ResizeObserver(entries=>{
   if(entries.every(entry=>widths.get(entry.target)===entry.contentRect.width))return;
   for(const {target,contentRect} of entries)widths.set(target,contentRect.width);
-  fitSectionTools();
+  scheduleSectionTools();
  });
  for(const id of ['timeline-header','map-header'])observer.observe($(id));
 }
@@ -1483,7 +1577,7 @@ $('map').addEventListener('touchcancel',finishRegionZoom);
 if($('heatmap'))$('heatmap').onchange=()=>draw();if($('aggregate'))$('aggregate').onchange=()=>draw();
 const narrowDrawers=typeof matchMedia==='function'?matchMedia('(max-width:1280px)'):null;
 const overlayDrawers=typeof matchMedia==='function'?matchMedia('(max-width:650px)'):null;
-let rankDrawerOpen=true, lastOpenedDrawer='rank', drawerResizeTimer, drawerScrollPosition=null;
+let rankDrawerOpen=false, lastOpenedDrawer='rank', drawerResizeTimer, drawerScrollPosition=null;
 function updateDrawerLayout(){
  syncDrawerOverlay();
  if(!observesMapSize){
@@ -1608,9 +1702,14 @@ function renderThemeOptions(){
  }).join('');
  $('theme-options').querySelectorAll('[data-theme-choice]').forEach(button=>button.onclick=()=>applyTheme(button.dataset.themeChoice));
 }
-for(const [id,render] of [['place-list-details',renderPlaces],['rule-list-details',renderBlacklist],['theme-list-details',renderThemeOptions]]){
+for(const [id,render] of [['rule-list-details',renderBlacklist],['theme-list-details',renderThemeOptions]]){
  $(id).ontoggle=()=>{if($(id).open)render();};
 }
+$('place-list-details').ontoggle=()=>{
+ if(!$('place-list-details').open)return;
+ renderPlaces();
+ if(!china)void loadChina().then(renderPlaces).catch(()=>{});
+};
 function collapseSection(key){
  const closed=Boolean(collapsedSections[key]);
  $(key+'-body').hidden=closed;
@@ -1620,18 +1719,20 @@ function collapseSection(key){
  if(key==='map'){
   $('map-tools').hidden=closed;
   if(!closed)map.invalidateSize({pan:false});
+  else $('map-title').textContent='地点';
  }
 }
 function setSectionCollapsed(key,closed){
  collapsedSections[key]=closed;
- localStorage.setItem('atlas-sections',JSON.stringify(collapsedSections));
  collapseSection(key);
  if(key==='map'&&!closed){
-  fitSectionTools();
-  draw();
-  fitPoints();
+  scheduleSectionTools();
+  return loadMainMap();
  }
- if(key==='timeline'&&!closed)fitSectionTools();
+ if(key==='timeline'&&!closed){
+  renderTimePanel();
+  scheduleSectionTools();
+ }
 }
 for(const key of ['map','timeline','eventlist']){
  $('collapse-'+key).onclick=()=>setSectionCollapsed(key,!collapsedSections[key]);
@@ -1690,7 +1791,7 @@ function syncDrawerOverlay(){
 }
 $('close-rank-drawer').onclick=()=>drawer(false);
 $('close-settings-drawer').onclick=()=>settingsDrawer(false);
-if(overlayDrawers?.matches)drawer(false,false);
+drawer(false,false);
 overlayDrawers?.addEventListener?.('change',syncDrawerOverlay);
 for(const [id,direction,close] of [['drawer',-1,drawer],['settings-drawer',1,settingsDrawer]]){
  const panel=$(id);
@@ -1845,6 +1946,45 @@ async function loadCityBoundaries(){
  }).finally(()=>{cityBoundaryRequest=null;});
  await cityBoundaryRequest;
 }
+let chinaRequest,worldRequest;
+function loadChina(){
+ if(china)return Promise.resolve(china);
+ chinaRequest??=fetch('data/china.json').then(response=>{
+  if(!response.ok)throw Error('全国底图读取失败');
+  return response.json();
+ }).then(data=>{
+  china=data;
+  setupGaz();
+  cache.clear();
+  return data;
+ }).finally(()=>{chinaRequest=null;});
+ return chinaRequest;
+}
+async function loadMainMap(){
+ if($('map-body').hidden)return;
+ const level=mapLevel(),chinaWasReady=Boolean(china);
+ if(level==='place'){
+  renderMapResults(true);
+  if(chinaWasReady)return;
+ }else{
+  draw();
+  $('mapnotice').textContent='正在加载地图…';
+ }
+ try{
+  if(level==='country'&&!world)worldRequest??=fetchJsonWithProgress('data/world.json','国家边界').then(data=>{
+   world=data;
+   setupGaz();
+   cache.clear();
+  }).finally(()=>{worldRequest=null;});
+  await Promise.all([loadChina(),level==='country'?worldRequest:null]);
+ }catch{
+  if(!$('map-body').hidden&&mapLevel()===level)$('mapnotice').textContent='地图数据读取失败，请重新打开地点地图';
+  return;
+ }
+ if($('map-body').hidden||mapLevel()!==level)return;
+ if(level==='shanghai')await enterShanghaiMap();
+ else renderMapResults(true);
+}
 function cityFeatures(){
  return cityBoundaries?.features||[...cityBoundaryParts.values()].flatMap(part=>part.features);
 }
@@ -1889,6 +2029,7 @@ function loadVisitedCityBoundaries(){
 }
 function annualYears(){
  const now=new Date().getFullYear();
+ ensureTimelineYears();
  return source.length?{min:yearMin,max:Math.max(now,yearMax)}:{min:now,max:now};
 }
 let annualAvailableYears=[];
@@ -1899,6 +2040,7 @@ function renderAnnualYearSelect(year,custom){
  select.value=custom?'range':String(year);
 }
 function reviewEvents(from,to,includeOverlapping=false){
+ ensureTimelineYears();
  const inRange=event=>event.start<=to&&(event.start>=from||includeOverlapping&&event.end>from);
  if(from>=new Date(yearMin,0,1)&&to<new Date(yearMax+1,0,1)){
   ensureTimeline();
@@ -1909,7 +2051,7 @@ function reviewEvents(from,to,includeOverlapping=false){
 }
 let tripEvents=[],tripMap,tripMarkers,tripRoutes,tripLayerControl,tripShareData,tripTileLayer;
 const tripHiddenPlaces=new Map();
-let tripExportMap,tripExportTiles,tripExportRoutes;
+let tripExportView,tripSharePreview,tripShareRequest=0;
 const tripExportSize=420;
 let tripLinesEnabled=true;
 const tripColors=['#3d664e','#315987','#874939','#695087','#856020','#2e6a71'];
@@ -1943,7 +2085,7 @@ function setupDesktopTypography(){
  size.value=Number.isInteger(savedSize)&&savedSize>=12&&savedSize<=18?String(savedSize):'14';
  const apply=()=>{
   document.body.style.setProperty('--app-font-size',size.value+'px');
-  fitSectionTools();
+  scheduleSectionTools();
  };
  size.onchange=()=>{
   localStorage.setItem('atlas-ui-font-size',size.value);
@@ -1988,14 +2130,14 @@ function addTripRoutes(lines,layer){
   L.polyline(route,{color,weight:3,opacity:.82,dashArray:'7 5',className:'trip-route-line',interactive:false}).addTo(layer);
  }
 }
-function addTripPins(points,layer,preview=false){
+function addTripPins(points,layer){
  for(const {coord,badges,labels} of points){
   const html=[...badges].map(([number,color])=>'<span class="trip-pin-badge" style="background:'+color+'">'+number+'</span>').join('');
   const width=badges.size*22+(badges.size-1)*2;
   const names=[...labels];
   const icon=L.divIcon({className:'trip-pin',html,iconSize:[width,22],iconAnchor:[width/2,11]});
-  const marker=L.marker(coord,{icon,alt:names.join('、'),interactive:!preview,keyboard:!preview});
-  if(!preview)marker.bindTooltip(names.map(E).join('<br>'),{direction:'top'});
+  const marker=L.marker(coord,{icon,alt:names.join('、')});
+  marker.bindTooltip(names.map(E).join('<br>'),{direction:'top'});
   marker.addTo(layer);
  }
 }
@@ -2114,42 +2256,75 @@ function renderTrip(event){
  }
  renderTripDays(days,overview,hiddenPlaces);
 }
-function resizeTripExportPreview(){
- const frame=$('trip-export-frame');
- if(frame.clientWidth)$('trip-export-map').style.setProperty('--trip-preview-scale',frame.clientWidth/tripExportSize);
-}
-const tripExportResize=typeof ResizeObserver==='function'?new ResizeObserver(resizeTripExportPreview):null;
 function clearTripExportMap(){
- tripExportResize?.disconnect();
- tripExportMap?.remove();
- tripExportMap=tripExportTiles=tripExportRoutes=null;
+ tripExportView?.map.remove();
+ tripExportView=null;
 }
-function updateTripShareControls(){
+function prepareTripExportMap(data){
+ if(tripExportView?.data===data)return tripExportView;
+ clearTripExportMap();
+ const element=$('trip-export-map');
+ element.style.width=element.style.height=tripExportSize+'px';
+ const map=L.map(element,{zoomAnimation:false,fadeAnimation:false,zoomControl:false,attributionControl:false,boxZoom:false,
+  scrollWheelZoom:false,doubleClickZoom:false,dragging:false,touchZoom:false,keyboard:false,zoomSnap:.25});
+ const {url,options,exportCredit}=basemaps[tripProviderKey()];
+ const view={map,data,credit:exportCredit};
+ tripExportView=view;
+ fitTripMap(map,data.points,28,15);
+ view.tiles=L.tileLayer(url,{maxZoom:18,...options,crossOrigin:true}).addTo(map);
+ return view;
+}
+async function updateTripShareControls(){
  const dialog=$('trip-share-dialog');
- if(!dialog.open)return;
- const {points,lines}=tripShareData;
- const mapOption=$('trip-share-map'),lineOption=$('trip-share-lines'),frame=$('trip-export-frame');
- mapOption.disabled=!$('trip-share-places').checked||!points.length;
+ const data=tripShareData,event=tripEvents[Number($('trip-choice').value)];
+ if(!dialog.open||!data||!event)return;
+ const request=++tripShareRequest;
+ const current=()=>request===tripShareRequest&&dialog.open;
+ const {groups,points,lines,overview}=data;
+ const mapOption=$('trip-share-map'),lineOption=$('trip-share-lines');
+ const preview=$('trip-share-preview'),status=$('trip-share-status'),save=$('trip-share-save');
+ const showPlaces=$('trip-share-places').checked;
+ mapOption.disabled=!showPlaces||!points.length;
  const showMap=!mapOption.disabled&&mapOption.checked;
  lineOption.disabled=!showMap||!lines.length;
- frame.hidden=!showMap;
- if(!showMap){clearTripExportMap();return;}
- if(!tripExportMap){
-  const element=$('trip-export-map');
-  element.style.width=element.style.height=tripExportSize+'px';
-  resizeTripExportPreview();
-  tripExportResize?.observe(frame);
-  tripExportMap=L.map(element,{zoomAnimation:false,fadeAnimation:false,zoomControl:false,attributionControl:false,boxZoom:false,
-   scrollWheelZoom:false,doubleClickZoom:false,dragging:false,touchZoom:false,keyboard:false,zoomSnap:.25});
-  fitTripMap(tripExportMap,points,28,15);
-  const {url,options}=basemaps[tripProviderKey()]||basemaps.osm;
-  tripExportTiles=L.tileLayer(url,{maxZoom:18,...options,crossOrigin:true}).addTo(tripExportMap);
-  addTripPins(points,tripExportMap,true);
-  tripExportRoutes=L.layerGroup();
-  addTripRoutes(lines,tripExportRoutes);
+ const routes=!lineOption.disabled&&lineOption.checked?lines:[];
+ const partners=$('trip-share-people').checked?event.partners:[];
+ tripSharePreview=null;
+ save.disabled=true;
+ status.textContent='正在生成预览…';
+ preview.setAttribute('aria-busy','true');
+ try{
+  if(!showMap)clearTripExportMap();
+  const view=showMap?prepareTripExportMap(data):null;
+  const {drawTripShare,captureTripMap}=await import('./lib/trip-share.js');
+  if(!current())return;
+  if(view)view.capture??=captureTripMap(view.map,view.tiles,view.credit);
+  const mapImage=view?await view.capture:null;
+  if(!current())return;
+  const {start,end}=tripDates(event);
+  const dates=overview?tripDateRange(start,end):groups[0]?.day.label;
+  const {dark:deep,muted,soft,accent}=palettes[currentTheme];
+  const title=tripPlace(event);
+  const canvas=drawTripShare({title,dates,partners,groups,points,lines:routes,overview,showPlaces,showMap,
+   palette:{deep,muted,soft,accent},mapImage});
+  const selected=overview?start:groups[0]?.day.label||start;
+  const filename=tripShareFilename(title,selected,overview?end:selected);
+  canvas.setAttribute('role','img');
+  canvas.setAttribute('aria-label',title+'行程分享图');
+  preview.replaceChildren(canvas);
+  preview.hidden=false;
+  tripSharePreview={canvas,filename};
+  save.disabled=false;
+  status.textContent=showMap&&!mapImage?'底图暂不可用，已保留点位。':'';
+ }catch{
+  if(!current())return;
+  clearTripExportMap();
+  preview.replaceChildren();
+  preview.hidden=true;
+  status.textContent='未能生成预览。可调整选项后重试。';
+ }finally{
+  if(current())preview.setAttribute('aria-busy','false');
  }
- if(!lineOption.disabled&&lineOption.checked)tripExportRoutes.addTo(tripExportMap);
- else tripExportMap.removeLayer(tripExportRoutes);
 }
 $('trip-share').onclick=()=>{
  $('trip-share-people').checked=false;
@@ -2160,42 +2335,35 @@ $('trip-share').onclick=()=>{
 };
 $('trip-share-close').onclick=()=>$('trip-share-dialog').close();
 $('trip-share-dialog').onclose=()=>{
- if(!$('trip-share-dialog').open)clearTripExportMap();
+ if($('trip-share-dialog').open)return;
+ ++tripShareRequest;
+ tripSharePreview=null;
+ clearTripExportMap();
+ const preview=$('trip-share-preview');
+ preview.replaceChildren();
+ preview.hidden=true;
 };
-for(const id of ['trip-share-places','trip-share-map','trip-share-lines'])$(id).onchange=updateTripShareControls;
+for(const id of ['trip-share-places','trip-share-map','trip-share-lines','trip-share-people'])$(id).onchange=updateTripShareControls;
 $('trip-share-save').onclick=async()=>{
- const button=$('trip-share-save'),status=$('trip-share-status'),options=$('trip-share-options');
- const event=tripEvents[Number($('trip-choice').value)];
- if(!event||!tripShareData)return;
- const data=tripShareData;
- const {groups,points,lines,overview}=data;
- const showPlaces=$('trip-share-places').checked;
- const partners=$('trip-share-people').checked?event.partners:[];
- const {start,end}=tripDates(event);
- const dates=overview?tripDateRange(start,end):groups[0]?.day.label;
- const {dark:deep,muted,soft,accent}=palettes[currentTheme];
- const palette={deep,muted,soft,accent};
- const title=tripPlace(event);
- const routes=!$('trip-share-lines').disabled&&$('trip-share-lines').checked?lines:[];
- const map=tripExportMap,tiles=tripExportTiles,dialog=$('trip-share-dialog');
- button.disabled=options.disabled=true;
- status.textContent='正在生成…';
+ const prepared=tripSharePreview;
+ if(!prepared)return;
+ const button=$('trip-share-save'),status=$('trip-share-status'),dialog=$('trip-share-dialog');
+ const current=()=>prepared===tripSharePreview&&dialog.open;
+ button.disabled=true;
  try{
-  const {drawTripShare,captureTripMap}=await import('./lib/trip-share.js');
-  if(data!==tripShareData||!dialog.open||map!==tripExportMap)return;
-  const mapImage=map?await captureTripMap(map,tiles):null;
-  if(data!==tripShareData||!dialog.open||map!==tripExportMap)return;
-  const canvas=drawTripShare({title,dates,partners,groups,points,lines:routes,overview,showPlaces,showMap:!!map,palette,mapImage});
-  const selected=overview?start:groups[0]?.day.label||start;
-  await downloadPng(canvas,tripShareFilename(title,selected,overview?end:selected),dialog);
-  status.textContent=map&&!mapImage?'已导出。底图暂不可用，已保留点位。':'已生成 PNG 图片';
+  const png=await encodePng(prepared.canvas);
+  if(!current())return;
+  downloadImage(png,prepared.filename,dialog);
+  status.textContent='已下载 PNG';
  }catch{
-  status.textContent='图片导出失败，请重试';
+  if(current())status.textContent='图片导出失败，请重试';
  }finally{
-  button.disabled=options.disabled=false;
+  if(current())button.disabled=false;
  }
 };
-function openTrips(selected){
+let tripOpenRequest=0;
+async function openTrips(selected){
+ const request=++tripOpenRequest;
  ensureTimeline();
  tripEvents=timelineEvents.filter(isTrip);
  let index=selected?tripEvents.findIndex(event=>event.uid===selected.uid&&+event.start===+selected.start):0;
@@ -2210,6 +2378,14 @@ function openTrips(selected){
  const dialog=$('trip-dialog');
  if(!dialog.open)dialog.showModal();
  $('trips').setAttribute('aria-pressed','true');
+ if(!china&&tripEvents.length){
+  choice.disabled=true;
+  $('trip-share').hidden=true;
+  $('trip-status').textContent='正在加载行程地点…';
+  try{await loadChina();}catch{}
+  if(!dialog.open||request!==tripOpenRequest)return;
+ }
+ choice.disabled=false;
  renderTrip(tripEvents[index]);
 }
 $('trips').onclick=()=>openTrips();
@@ -2711,9 +2887,6 @@ async function encodePng(image){
  if(!png)throw Error('PNG 编码失败');
  return png;
 }
-async function downloadPng(image,filename,dialog){
- downloadImage(await encodePng(image),filename,dialog);
-}
 function downloadImage(png,filename,dialog){
  const url=URL.createObjectURL(png);
  const link=document.createElement('a');
@@ -2731,13 +2904,6 @@ async function exportAnnual(report,nationalMap,shanghaiMap,palette){
   const image=document.createElement('canvas');
   drawAnnualImage(image,report,nationalMap,shanghaiMap,palette);
   const png=await encodePng(image);
-  const files=[new File([png],report.filename+'.png',{type:'image/png'})];
-  if(navigator.share&&navigator.canShare?.({files})){
-   try{
-    await navigator.share({files});
-    return;
-   }catch(error){if(error.name==='AbortError')return;}
-  }
   downloadImage(png,report.filename,$('annual-review'));
   status.textContent='已生成 PNG 图片';
  }catch{
@@ -2764,7 +2930,7 @@ async function openAnnualReview(){
  overlay.showModal();
  $('annual').setAttribute('aria-pressed','true');
  try{
-  await Promise.all([loadCityBoundaries(),loadShanghaiLandmarks()]);
+  await Promise.all([loadChina(),loadCityBoundaries(),loadShanghaiLandmarks()]);
   if(overlay.open&&request===annualOpenRequest){
    const from=new Date(min,0,1),to=new Date(max,11,31,23,59,59,999);
    const events=reviewEvents(from,to);
@@ -2804,18 +2970,9 @@ for(const [id,step] of [['annual-prev',1],['annual-next',-1]]){
  };
 }
 async function startAtlas(){
- const [mapData,config,places,calendar]=await Promise.allSettled([
-  fetch('data/china.json').then(response=>{
-   if(!response.ok)throw Error('全国底图读取失败');
-   return response.json();
-  }),
+ const [config,places,calendar]=await Promise.allSettled([
   readConfigFiles(),readCSV(),fetchCalendar(),
  ]);
- if(mapData.status==='fulfilled'){
-  china=mapData.value;
-  setupGaz();
-  cache.clear();
- }
  renderBlacklist();
  let calendarReady=false;
  if(calendar.status==='fulfilled'){
@@ -2826,25 +2983,21 @@ async function startAtlas(){
   draw();
  }
  const missing=[];
- if(mapData.status==='rejected')missing.push('全国底图');
  if(config.status==='rejected')missing.push('配置');
  if(places.status==='rejected')missing.push('地点');
  if(!calendarReady)missing.push('日历');
  if(missing.length)$('status').textContent=missing.join('、')+'读取失败';
  if(!mobileSource||mobileImport)void updateDataTimes();
- if(calendarReady){
-  if(typeof requestAnimationFrame==='function'&&!document.hidden){
-   await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
-  }
-  renderOverviewChart();
- }
 }
 await startAtlas();
 (()=>{
  const level=new URLSearchParams(globalThis.location?.search).get('level');
- if(!['place','shanghai','domestic','country'].includes(level))return;
- $('level').value=level;
- if($('map-body').hidden)setSectionCollapsed('map',false);
- if(mapLevel()!=='place')$('level').dispatchEvent(new Event('change'));
+ if(['place','shanghai','domestic','country'].includes(level)){
+  $('level').value=level;
+  if($('map-body').hidden)setSectionCollapsed('map',false);
+  else void loadMainMap();
+ }else if(!$('map-body').hidden){
+  setTimeout(loadMainMap,0);
+ }
 })();
 (()=>{try{const ay=new URLSearchParams(location.search).get('annual');if(ay)setTimeout(()=>{const b=annualYears(),y=Number(ay)||new Date().getFullYear();openAnnualReview(Math.max(b.min,Math.min(b.max,y)));},500);}catch{}})();
