@@ -5,7 +5,7 @@ import {palettes,nightPalettes,resolveTheme,coordinateLabel,highlightLabelColor}
 import {criterion,toggleCriterion,matchesFilters,matchesCriterionText,matchesCriterionDate,searchCriterion,criterionDisplay,eventParts,eventCriteria,rankSections,toggleRankHidden} from './lib/filters.js';
 import {selectEmoji} from './lib/emoji.js';
 import {placeTypes,placeIndex,regionFromAddress} from './lib/place-categories.js';
-import {parseCalendar,expand,details,escape as E,validCoord} from './lib/core.js';
+import {parseCalendar,expand,details,escape as E,validCoord,setPlaceResolver} from './lib/core.js';
 import {applyRules,normalizePlace,isPlaceExcluded} from './lib/organize.js';
 import {gcjToWgs,shortRegionName,geometryPolygons,containsPoint} from './lib/geo.js';
 import {compareCalendars} from './lib/calendar-import.js';
@@ -84,8 +84,11 @@ function refresh({timeline=true,fitBeforeDraw=false}={}){
  const rangeLabel=start.replaceAll('-','/')+'-'+end.replaceAll('-','/');
  $('timeline-range-label').textContent=rangeLabel;
  const result=rangeEvents(from,to);
- const draft=$('search').value.trim();
- draftCriterion=draft?searchCriterion($('searchscope').value||'all',draft,result.events):null;
+ const draftRaw=$('search').value.trim();
+ const searchScope=$('searchscope').value||'all';
+ // 搜索时也把别名映射到 location，保证用别名也能搜到（地点/全部范围）
+ const draft=(draftRaw&&(searchScope==='all'||searchScope==='place'))?(baseCoords?.get(normalizePlace(draftRaw))?.location||draftRaw):draftRaw;
+ draftCriterion=draft?searchCriterion(searchScope,draft,result.events):null;
  appliedCriteria=draftCriterion&&!activeCriteria.some(c=>c.id===draftCriterion.id)?[...activeCriteria,draftCriterion]:activeCriteria;
  const dates=appliedCriteria.filter(c=>c.kind==='time');
  const others=appliedCriteria.filter(c=>c.kind!=='time');
@@ -751,7 +754,7 @@ for(const [id,key] of [['showplaces','places'],['showpeople','people']]){
 }
 
 
-function setupReference(){baseCoords=placeIndex(reference.places,normalizePlace);$('referenceinfo').textContent=reference.places.length+' 条';$('datum').value=localStorage.getItem('atlas-datum-v2')||'gcj02';}
+function setupReference(){baseCoords=placeIndex(reference.places,normalizePlace);setPlaceResolver(name=>baseCoords.get(normalizePlace(name))?.location||name);$('referenceinfo').textContent=reference.places.length+' 条';$('datum').value=localStorage.getItem('atlas-datum-v2')||'gcj02';}
 async function readConfigFiles(){const r=await fetch('api/config',{cache:'no-store'});if(!r.ok)throw Error('配置读取失败');const d=await r.json();rules=d;emojiConfig=d.emojis;configVersion=d.version;}
 function renderBlacklist(){const all=rules.blacklist||[],type=$('blacklist-type').value||'all',q=$('blacklist-search').value.toLowerCase();$('blacklist-summary').textContent=all.length+' 条';if(!$('rule-list-details').open)return;$('blacklist-rows').innerHTML=all.map((r,i)=>({r,i})).filter(({r})=>(type==='all'||r.type===type)&&(!q||[r.value,r.reason,r.type].join(' ').toLowerCase().includes(q))).map(({r,i})=>'<div class="blacklist-row '+(r.enabled==='0'?'off':'')+'"><label class="check"><input type="checkbox" data-rule-toggle="'+i+'" '+(r.enabled!=='0'?'checked':'')+(blacklistBusy||mobileSource?' disabled':'')+' aria-label="启用此规则"><span class="rule-type">'+(r.type==='event'?'事件':'地点')+'</span></label><div class="rule-body"><b>'+E(r.value)+'</b><small>'+({contains:'包含关键词',exact:'完整名称',uid:'事件 UID'}[r.match_type]||r.match_type)+'</small></div><div class="rule-actions"><button data-rule-edit="'+i+'" '+(blacklistBusy||mobileSource?'disabled':'')+' title="编辑规则" aria-label="编辑规则">'+entityIcon('edit')+'</button><button data-rule-delete="'+i+'" '+(blacklistBusy||mobileSource?'disabled':'')+' title="删除规则" aria-label="删除规则">'+entityIcon('trash')+'</button></div></div>').join('')||'<div class="empty">没有匹配规则</div>';$('blacklist-rows').querySelectorAll('[data-rule-toggle]').forEach(el=>el.onchange=async()=>{const rows=structuredClone(rules.blacklist);rows[+el.dataset.ruleToggle].enabled=el.checked?'1':'0';await persistBlacklist(rows);});$('blacklist-rows').querySelectorAll('[data-rule-edit]').forEach(el=>el.onclick=()=>editBlacklist(+el.dataset.ruleEdit));$('blacklist-rows').querySelectorAll('[data-rule-delete]').forEach(el=>el.onclick=async()=>{const rows=rules.blacklist.filter((r,i)=>i!==+el.dataset.ruleDelete);await persistBlacklist(rows);});}
 async function persistBlacklist(rows,version=configVersion){if(blacklistBusy)return false;blacklistBusy=true;$('blacklist-error').textContent='';renderBlacklist();try{const response=await fetch('api/config',{method:'POST',headers:{'Content-Type':'application/json','X-Atlas-Write':'1'},body:JSON.stringify({version,blacklist:rows})});const d=await response.json();if(!response.ok)throw Error(d.error||'黑名单保存失败');rules=d;emojiConfig=d.emojis;configVersion=d.version;timelineKey='';refresh();updateDataTimes(['blacklist']);return true;}catch(e){$('blacklist-error').textContent=e.message;return false;}finally{blacklistBusy=false;renderBlacklist();}}
