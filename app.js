@@ -437,6 +437,30 @@ function updateToolbarHeight(){
 const toolbar=document.querySelector('.app-toolbar');
 if(toolbar&&typeof ResizeObserver==='function')new ResizeObserver(updateToolbarHeight).observe(toolbar);
 updateToolbarHeight();
+let eventJumpFrame=0;
+const toolbarBottom=()=>document.querySelector('.app-toolbar')?.getBoundingClientRect().bottom||0;
+function scheduleEventJump(){
+ if(eventJumpFrame||typeof requestAnimationFrame!=='function')return;
+ eventJumpFrame=requestAnimationFrame(()=>{
+  eventJumpFrame=0;
+  const button=$('events-back-top');
+  if(button)button.hidden=window.scrollY<160;
+ });
+}
+globalThis.addEventListener?.('scroll',scheduleEventJump,{passive:true});
+globalThis.addEventListener?.('resize',scheduleEventJump);
+function scrollToHeading(id){
+ if(typeof window==='undefined')return;
+ const heading=$(id);
+ if(!heading)return;
+ window.scrollBy({top:heading.getBoundingClientRect().top-toolbarBottom()-6,
+  behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
+ heading.focus({preventScroll:true});
+}
+$('events-back-top').onclick=()=>{
+ window.scrollTo({top:0,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
+ scheduleEventJump();
+};
 function revealTimeline(){
  const heading=$('timeline-header');
  heading.scrollIntoView?.({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
@@ -512,6 +536,7 @@ function renderEvents(){
  container.querySelectorAll('[data-filter-event]').forEach(el=>el.onclick=()=>{activeCriteria=eventCriteria(activeCriteria,el.dataset.filterEvent);refresh();fitPoints();});
  container.querySelectorAll('[data-trip-event]').forEach(el=>el.onclick=()=>openTrips(rows[+el.dataset.tripEvent]));
  scheduleEventLayout();
+ scheduleEventJump();
 }
 function renderFilterChips(){
  const container=$('activefilters');
@@ -874,7 +899,17 @@ $('searchform').onsubmit=event=>{
  refresh();
  fitPoints();
 };
-$('more').onclick=()=>{limit+=50;renderEvents();};
+$('more').onclick=()=>{
+ const list=$('eventlist-body'),winTop=window.scrollY,listTop=list.scrollTop;
+ limit+=50;
+ renderEvents();
+ const restore=()=>{
+  list.scrollTop=listTop;
+  if(window.scrollY!==winTop)window.scrollTo({top:winTop,behavior:'instant'});
+ };
+ restore();
+ if(typeof requestAnimationFrame==='function')requestAnimationFrame(restore);
+};
 $('unselect').onclick=()=>{activeCriteria=activeCriteria.filter(c=>c.kind==='time');$('search').value='';refresh();};
 document.querySelectorAll('[data-panel]').forEach(el=>el.onclick=()=>{tab=el.dataset.tab;document.querySelectorAll('[data-panel]').forEach(x=>x.classList.toggle('active',x===el));renderRank();});document.querySelectorAll('[data-settings-panel]').forEach(el=>el.onclick=()=>{activePanel=el.dataset.settingsPanel;document.querySelectorAll('[data-settings-panel]').forEach(x=>x.classList.toggle('active',x===el));$('settings-drawer').querySelectorAll('[data-content]').forEach(x=>x.hidden=x.dataset.content!==activePanel);if(activePanel==='manage')renderPlaces();});
 try{
@@ -2083,7 +2118,7 @@ function setupDesktopTypography(){
   return '<option value="'+value+'">'+value+' px</option>';
  }).join('');
  const savedSize=Number(localStorage.getItem('atlas-ui-font-size'));
- size.value=Number.isInteger(savedSize)&&savedSize>=12&&savedSize<=18?String(savedSize):'14';
+ size.value=Number.isInteger(savedSize)&&savedSize>=12&&savedSize<=18?String(savedSize):'15';
  const apply=()=>{
   document.body.style.setProperty('--app-font-size',size.value+'px');
   scheduleSectionTools();
@@ -2142,15 +2177,19 @@ function addTripPins(points,layer){
   marker.addTo(layer);
  }
 }
-function renderTripDays(days,overview,hiddenPlaces){
+function tripDayKey(day){return day.number===null?day.label:'#'+day.number;}
+function renderTripDays(days,overview,hiddenByDay){
  const list=$('trip-locations');
- const groups=days.map(day=>({day,label:tripDayLabel(day),color:tripDayColor(day),locations:day.places.map(name=>{
-  const position=pos(name);
-  return {name,position,located:position?.precision==='exact'&&validCoord(position)};
- })}));
- list.innerHTML=groups.map(({label,color,locations})=>{
-  const stops=locations.map(({name,located})=>located
-   ?'<li><button type="button" class="trip-place-toggle" title="切换地图显示" data-trip-place="'+E(name)+'" aria-pressed="'+!hiddenPlaces.has(name)
+ const groups=days.map(day=>{
+  const hiddenSet=hiddenByDay.get(tripDayKey(day));
+  return {day,label:tripDayLabel(day),color:tripDayColor(day),locations:day.places.map(name=>{
+   const position=pos(name);
+   return {name,position,located:position?.precision==='exact'&&validCoord(position),hidden:Boolean(hiddenSet&&hiddenSet.has(name))};
+  })};
+ });
+ list.innerHTML=groups.map(({day,label,color,locations})=>{
+  const stops=locations.map(({name,located,hidden})=>located
+   ?'<li><button type="button" class="trip-place-toggle" title="切换地图显示" data-trip-place="'+E(name)+'" data-trip-day="'+E(tripDayKey(day))+'" aria-pressed="'+(!hidden)
     +'"><span>'+E(name)+'</span><small aria-hidden="true">已隐藏</small></button></li>'
    :'<li class="trip-place-unlocated">'+E(name)+' <small>未定位</small></li>').join('');
   return '<details class="trip-group" open><summary><i style="background:'+color+'" aria-hidden="true"></i>'+E(label)
@@ -2160,25 +2199,30 @@ function renderTripDays(days,overview,hiddenPlaces){
  list.onclick=event=>{
   const button=event.target.closest('[data-trip-place]');
   if(!button)return;
-  const {tripPlace:name}=button.dataset;
-  const show=hiddenPlaces.delete(name);
-  if(!show)hiddenPlaces.add(name);
+  const {tripPlace:name,tripDay:dayKey}=button.dataset;
+  let set=hiddenByDay.get(dayKey);
+  if(!set){set=new Set();hiddenByDay.set(dayKey,set);}
+  const hidden=!set.has(name);
+  if(hidden)set.add(name);else set.delete(name);
+  const group=groups.find(item=>tripDayKey(item.day)===dayKey);
+  const location=group?.locations.find(item=>item.name===name);
+  if(location)location.hidden=hidden;
   for(const control of list.querySelectorAll('[data-trip-place]')){
-   if(control.dataset.tripPlace===name)control.setAttribute('aria-pressed',String(show));
+   if(control.dataset.tripPlace===name&&control.dataset.tripDay===dayKey)control.setAttribute('aria-pressed',String(!hidden));
   }
-  renderTripMap(groups,overview,hiddenPlaces,false);
+  renderTripMap(groups,overview,false);
  };
- renderTripMap(groups,overview,hiddenPlaces,true);
+ renderTripMap(groups,overview,true);
 }
-function renderTripMap(groups,overview,hiddenPlaces,refit){
+function renderTripMap(groups,overview,refit){
  const canvas=$('trip-map');
  tripMarkers?.clearLayers();
  tripRoutes?.clearLayers();
  const pointsByCoordinate=new Map(),lines=[];
  for(const {day,color,locations} of groups){
   const route=[];
-  for(const [index,{name,position,located}] of locations.entries()){
-   if(located&&!hiddenPlaces.has(name)){
+  for(const [index,{name,position,located,hidden}] of locations.entries()){
+   if(located&&!hidden){
     const coord=[position.lat,position.lon],key=coord.join(',');
     const number=overview?(day.number??'?'):index+1;
     if(!pointsByCoordinate.has(key))pointsByCoordinate.set(key,{coord,badges:new Map(),labels:new Set()});
@@ -2192,7 +2236,7 @@ function renderTripMap(groups,overview,hiddenPlaces,refit){
  }
  const points=[...pointsByCoordinate.values()];
  const shareGroups=groups.map(group=>({...group,locations:group.locations
-  .flatMap((location,index)=>hiddenPlaces.has(location.name)?[]:[{...location,number:index+1}])}));
+  .flatMap((location,index)=>location.hidden?[]:[{...location,number:index+1}])}));
  tripShareData={groups:shareGroups,points,lines,overview};
  updateTripShareControls();
  const hasLocations=groups.some(group=>group.locations.length);
@@ -2232,14 +2276,14 @@ function renderTrip(event){
  if(!event){
   summary.innerHTML='';
   tabs.innerHTML='';
-  renderTripDays([],true,new Set());
+  renderTripDays([],true,new Map());
   $('trip-status').textContent='日历里没有识别到「××之旅」事件。';
   return;
  }
  const {start,end,days}=tripDetails(event);
  const key=eventKey(event);
- if(!tripHiddenPlaces.has(key))tripHiddenPlaces.set(key,new Set());
- const hiddenPlaces=tripHiddenPlaces.get(key);
+ if(!tripHiddenPlaces.has(key))tripHiddenPlaces.set(key,new Map());
+ const hiddenByDay=tripHiddenPlaces.get(key);
  summary.innerHTML='<span>'+E(tripDateRange(start,end))+'</span>'
   +(event.partners.length?'<span class="trip-partners" aria-label="'+E('同伴：'+event.partners.join('、'))+'">'
    +entityIcon('person')+event.partners.map(name=>'<span>'+E(name)+'</span>').join(' ')+'</span>':'');
@@ -2251,11 +2295,11 @@ function renderTrip(event){
   button.onclick=()=>{
    for(const other of tabs.querySelectorAll('[data-trip-day]'))other.setAttribute('aria-pressed',String(button===other));
    const index=Number(button.dataset.tripDay);
-   renderTripDays(index===-1?days:[days[index]],index===-1,hiddenPlaces);
+   renderTripDays(index===-1?days:[days[index]],index===-1,hiddenByDay);
    $('trip-share-status').textContent='';
   };
  }
- renderTripDays(days,overview,hiddenPlaces);
+ renderTripDays(days,overview,hiddenByDay);
 }
 function clearTripExportMap(){
  tripExportView?.map.remove();
