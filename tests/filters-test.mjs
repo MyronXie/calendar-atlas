@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';import {criterion,toggleCriterion,matchesFilters,searchCriterion,matchesCriterionText,criterionDisplay} from '../lib/filters.js';const e={title:'音乐节',places:['A','B'],partners:['甲','乙'],note:'周末安排'};let f=[];for(const c of [criterion('event','音乐节'),criterion('place','A'),criterion('person','甲'),criterion('person','乙')])f=toggleCriterion(f,c);assert.ok(matchesFilters(e,f));assert.ok(!matchesFilters({...e,partners:['甲']},f));assert.ok(!matchesFilters({...e,places:['B']},f));f=toggleCriterion(f,criterion('event','演唱会'));assert.ok(matchesFilters({...e,title:'演唱会'},f));for(const [scope,word,yes] of [['note','周末',true],['person','甲',true],['place','音乐节',false],['event','音乐节',true],['all','安排',true]])assert.equal(matchesFilters(e,[criterion('keyword',word,{scope})]),yes);assert.ok(matchesFilters(e,[criterion('placeGroup','区域',{values:['B','C']})]));assert.equal(toggleCriterion(f,f[0]).length,f.length-1);console.log(JSON.stringify({multiplePeopleAND:'passed',multiplePlacesAND:'passed',eventNamesOR:'passed',searchScopes:'passed',dedupAndRemove:'passed'}));
 
+const taggedNote={...e,places:['博物馆'],partners:['甲'],note:'Partner：甲\r\nPlace: 博物馆\n需要提前预约'};
+assert.ok(matchesFilters(taggedNote,[searchCriterion('note','提前预约',[])]));
+assert.ok(!matchesFilters(taggedNote,[searchCriterion('note','博物馆',[])]));
+assert.ok(!matchesFilters(taggedNote,[searchCriterion('note','甲',[])]));
+assert.ok(matchesFilters(taggedNote,[searchCriterion('all','博物馆',[])]));
+
 const exact=searchCriterion('place','a',[e]);
 assert.equal(exact.id,criterion('place','A').id);
 assert.deepEqual(criterionDisplay(exact),{label:'地点',icon:'place',value:'A'});
