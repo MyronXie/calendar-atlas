@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {coordinateLabel,resolveTheme,palettes} from '../appearance.js';
+import {coordinateLabel,resolveTheme,palettes,nightPalettes} from '../appearance.js';
 
 assert.equal(coordinateLabel({lat:31.114,lon:131.224}),'31.114°N,131.224°E');
 assert.equal(coordinateLabel({lat:-31.114,lon:-131.224}),'31.114°S,131.224°W');
@@ -17,6 +17,13 @@ for(const [key,palette] of Object.entries(palettes)){
  for(const tone of ['accent','soft','mid','dark','canvas','highlight','muted','line'])assert.match(palette[tone],/^#[0-9a-f]{6}$/);
  for(const background of ['#ffffff',palette.canvas,palette.soft]){
   assert.ok((luminance(background)+.05)/(luminance(palette.muted)+.05)>=4.5,palette.name+'正文对比度');
+ }
+}
+for(const [key,theme] of Object.entries(nightPalettes)){
+ assert.equal(theme.name,palettes[key].name);
+ for(const background of [theme.canvas,theme.surface,theme.soft]){
+  assert.ok((luminance(theme.muted)+.05)/(luminance(background)+.05)>=4.5,theme.name+'夜间正文对比度');
+  assert.ok((luminance(theme.accent)+.05)/(luminance(background)+.05)>=4.5,theme.name+'夜间强调色对比度');
  }
 }
 console.log('Coordinate formatting and palette defaults: passed');

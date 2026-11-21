@@ -8,13 +8,24 @@ const themeColors={
  tangerine:{name:'橘汽',accent:'#b14410',soft:'#fdebdc',mid:'#ffad65',dark:'#55250f',canvas:'#fff7ef',highlight:'#4d58dc'},
  lime:{name:'青柠',accent:'#00715c',soft:'#e8f8d7',mid:'#8ada79',dark:'#173816',canvas:'#f5fcef',highlight:'#b92075'},
 };
-function lighten(color,whiteShare){
- const channels=color.slice(1).match(/../g).map(part=>parseInt(part,16));
- return '#'+channels.map(channel=>Math.round(channel*(1-whiteShare)+255*whiteShare).toString(16).padStart(2,'0')).join('');
+function mix(color,target,targetShare){
+ const channels=value=>value.slice(1).match(/../g).map(part=>parseInt(part,16));
+ const other=channels(target);
+ return '#'+channels(color).map((channel,i)=>
+  Math.round(channel*(1-targetShare)+other[i]*targetShare).toString(16).padStart(2,'0'),
+ ).join('');
 }
 export const palettes=Object.fromEntries(Object.entries(themeColors).map(([key,theme])=>[key,{
- ...theme,muted:lighten(theme.dark,.25),line:lighten(theme.mid,.58),
+ ...theme,muted:mix(theme.dark,'#ffffff',.25),line:mix(theme.mid,'#ffffff',.58),
 }]));
+export const nightPalettes=Object.fromEntries(Object.entries(themeColors).map(([key,theme])=>{
+ const canvas='#0d100f',surface='#161b18';
+ return [key,{
+  name:theme.name,canvas,surface,dark:'#edf2ee',muted:'#bec9c0',
+  accent:mix(theme.accent,'#ffffff',.38),highlight:mix(theme.highlight,'#ffffff',.30),
+  soft:mix(surface,theme.accent,.21),mid:mix(surface,theme.mid,.45),line:mix(surface,theme.mid,.28),
+ }];
+}));
 export function resolveTheme(value){return Object.hasOwn(palettes,value)?value:'green';}
 export function highlightLabelColor({highlight,dark}){
  const luminance=color=>color.slice(1).match(/../g).reduce((sum,part,i)=>{

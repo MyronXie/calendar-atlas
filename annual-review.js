@@ -76,7 +76,7 @@ export function layoutMapLabels(labels,view,{offset=0,maxShift=100}={}) {
   }
   return drawn;
 }
-function drawMapLabels(ctx,labels,view,{fontSize,leaders=false,offset=0,maxShift=100}) {
+function drawMapLabels(ctx,labels,view,{fontSize,leaders=false,offset=0,maxShift=100,halo='#fff'}) {
   ctx.font = `600 ${fontSize}px ${mapFont}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -95,7 +95,7 @@ function drawMapLabels(ctx,labels,view,{fontSize,leaders=false,offset=0,maxShift
   }
   for (const {name,x,y,color} of drawn) {
     ctx.lineWidth=3;
-    ctx.strokeStyle='#fff';
+    ctx.strokeStyle=halo;
     ctx.strokeText(name,x,y);
     ctx.fillStyle=color;
     ctx.fillText(name,x,y);
@@ -184,7 +184,7 @@ export function drawAnnualMap(canvas, provinces, boundaries, visits, palette, in
     ctx.stroke();
     labelCity(key,key.split('|')[1],[lon,lat]);
   }
-  drawMapLabels(ctx,[...labels.values()],{x:0,y:0,width,height},{fontSize,leaders:true,offset:16,maxShift:fontSize>20?306:266});
+  drawMapLabels(ctx,[...labels.values()],{x:0,y:0,width,height},{fontSize,leaders:true,offset:16,maxShift:fontSize>20?306:266,halo:palette.surface});
 }
 
 export const shanghaiName = '上海市';
@@ -252,7 +252,7 @@ export function drawShanghaiMap(canvas, boundaries, landmarks, places, {
   const zoomBounds = [west,projectionY(south),east,projectionY(north)];
   const markers = [];
   const byPriority = list => [...list.filter(p=>!topPlaces.has(p.name)),...list.filter(p=>topPlaces.has(p.name))];
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = palette.surface||'#fff';
   ctx.fillRect(0,0,width,height);
   function base(frame,viewport,detail) {
     ctx.fillStyle = palette.canvas;
@@ -315,7 +315,7 @@ export function drawShanghaiMap(canvas, boundaries, landmarks, places, {
   }
   const city = mapFrame(ctx,mapBounds(districts.map(({paths})=>paths)),main);
   const center = mapFrame(ctx,zoomBounds,zoom);
-  function mapLabel(frame,name,coordinate,color='#454545') {
+  function mapLabel(frame,name,coordinate,color=palette.surface?palette.dark:'#454545') {
     const [x,y]=frame.point(...coordinate);
     return {name,x,y,color};
   }
@@ -333,7 +333,7 @@ export function drawShanghaiMap(canvas, boundaries, landmarks, places, {
   dots(city,main,places,4.8);
   const outskirts = new Set(['崇明','宝山','嘉定','青浦','松江','金山','奉贤','浦东','闵行']);
   const leftLabels=districts.filter(d=>outskirts.has(d.name)).map(d=>mapLabel(city,d.name,d.center));
-  drawMapLabels(ctx,leftLabels,main,{fontSize:stacked?23:21,maxShift:40});
+  drawMapLabels(ctx,leftLabels,main,{fontSize:stacked?23:21,maxShift:40,halo:palette.surface});
   ctx.restore();
 
   ctx.save();
@@ -342,7 +342,7 @@ export function drawShanghaiMap(canvas, boundaries, landmarks, places, {
   ctx.clip();
   let detailView=zoom;
   if(innerRing&&ring?.length){
-    ctx.fillStyle='#f1f1f1';
+    ctx.fillStyle=palette.surface||'#f1f1f1';
     ctx.fillRect(zoom.x,zoom.y,zoom.width,zoom.height);
     const [lx,ty]=center.point(west,north),[rx,by]=center.point(east,south);
     detailView={x:lx,y:ty,width:rx-lx,height:by-ty};
@@ -361,7 +361,7 @@ export function drawShanghaiMap(canvas, boundaries, landmarks, places, {
       rightLabels.push(mapLabel(center,d.name,[lon,lat]));
     }
   }
-  drawMapLabels(ctx,rightLabels,detailView,{fontSize:stacked?23:20,maxShift:50});
+  drawMapLabels(ctx,rightLabels,detailView,{fontSize:stacked?23:20,maxShift:50,halo:palette.surface});
   ctx.restore();
   return markers;
 }
