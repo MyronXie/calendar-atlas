@@ -1,3 +1,3 @@
-import assert from 'node:assert/strict';import {applyRules,normalizePlace,gcjToWgs} from '../organize.js';
+import assert from 'node:assert/strict';import {applyRules,normalizePlace} from '../lib/organize.js';import {gcjToWgs} from '../lib/geo.js';
 const e=[{title:'教学测试',places:['测试地点'],partners:['A']},{title:'出游',places:['教室','公园'],partners:['B']},{title:'散步',places:['无效点'],partners:[]}];const r=applyRules(e,{eventKeywords:['教学'],placeKeywords:['教室']},true,new Set([normalizePlace('无效点')]));assert.equal(r.events.length,1);assert.deepEqual(r.events[0].places,['公园']);assert.equal(r.excludedEvents,2);assert.equal(r.excludedPlaces,2);assert.equal(applyRules(e,{},false).events.length,3);assert.deepEqual(gcjToWgs(0,0),[0,0]);assert.equal(normalizePlace(' ABC　 '),'abc');
 console.log('Event and place exclusions, normalization, and coordinate conversion: passed');

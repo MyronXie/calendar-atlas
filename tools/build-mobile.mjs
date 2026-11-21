@@ -1,14 +1,14 @@
 // Build static read-only web app under mobile/.
 //  default (data-full): copy atlas-data files — for local PWA.
-//  --data-less         : DO NOT bundle private data; include in-app import (IndexedDB) — for public repo / APK.
+//  --data-less         : DO NOT bundle private data; include in-app import (IndexedDB) — for public repo / PWA.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
-import {atlasFiles,atlasDataDirectory} from '../atlas-data.mjs';
-import {partitionCityBoundaries} from '../city-boundary-data.mjs';
-import {palettes} from '../appearance.js';
-import {stampAppVersion} from '../app-version.mjs';
+import {atlasFiles,atlasDataDirectory} from '../server/atlas-data.mjs';
+import {partitionCityBoundaries} from '../lib/city-boundary-data.mjs';
+import {palettes} from '../lib/appearance.js';
+import {stampAppVersion} from '../server/app-version.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const out = path.join(root, 'mobile');
 const DATA_LESS = process.argv.includes('--data-less');
@@ -18,15 +18,15 @@ const appIcons = [
   {src:'assets/icons/icon-512.png', sizes:'512x512', type:'image/png', purpose:'any maskable'},
 ];
 const staticFiles = [
-  'style.css', 'core.js', 'data-formats.js', 'place-categories.js', 'organize.js', 'basemaps.js', 'emoji.js', 'filters.js', 'appearance.js', 'timeline.js', 'annual-review.js',
-  'calendar-import.js', 'travel.js', 'trip-share.js',
+  'style.css', 'lib/core.js', 'lib/data-formats.js', 'lib/place-name.js', 'lib/geo.js', 'lib/place-categories.js', 'lib/organize.js', 'lib/basemaps.js', 'lib/emoji.js', 'lib/filters.js', 'lib/appearance.js', 'lib/timeline.js', 'lib/annual-review.js',
+  'lib/calendar-import.js', 'lib/travel.js', 'lib/trip-share.js',
   'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/leaflet.markercluster.js', 'vendor/MarkerCluster.css', 'vendor/MarkerCluster.Default.css', 'vendor/leaflet-heat.js', 'vendor/ical.min.js',
   'data/world.json', 'data/china.json', 'data/shanghai-landmarks.json',
   'assets/icons/favicon-32.png', 'assets/icons/apple-touch-icon.png', ...appIcons.map(icon => icon.src),
 ];
 
 await fs.rm(out, { recursive: true, force: true });
-for (const dir of ['data', 'vendor', 'assets/icons']) await fs.mkdir(path.join(out, dir), { recursive: true });
+for (const dir of ['data', 'vendor', 'assets/icons', 'lib']) await fs.mkdir(path.join(out, dir), { recursive: true });
 for (const file of staticFiles) await fs.copyFile(path.join(root, file), path.join(out, file));
 const fullBoundaries='data/city-boundaries.json';
 const {index,provinces}=partitionCityBoundaries(JSON.parse(await rd(fullBoundaries)));

@@ -3,11 +3,11 @@
 // Usage: AMAP_KEY=xxx node tools/place-verify.mjs [--months 3]
 import fs from 'node:fs/promises';
 import {norm, coreSim, dist, amapText, amapAround, baiduText, photonReverse, photonSearch, loadPlaces, todayStr, parseDateYY, daysBetween, rootURL} from './place-common.mjs';
-import {stringifyCSV} from '../csv-store.mjs';
+import {stringifyCSV} from '../server/csv-store.mjs';
 const argv = process.argv.slice(2); const arg = (n, d) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : d; };
 const MONTHS = Number(arg('--months', 3)); const key = todayStr().replace(/\//g, '');
-const OUT = arg('--out', `reports/地点有效性核验报告_${key}.md`);
-const DEC = arg('--decisions', `reports/地点有效性核验_决策_${key}.csv`);
+const OUT = arg('--out', `temps/地点有效性核验报告_${key}.md`);
+const DEC = arg('--decisions', `temps/地点有效性核验_决策_${key}.csv`);
 const today = new Date();
 const db = await loadPlaces();
 const skipNo = [], skipFresh = [], keep = [], rename = [], closed = [], review = [];

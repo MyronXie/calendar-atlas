@@ -4,12 +4,10 @@ atlas-data/
 user-data/
 mobile-data/
 data/local-reference.json
-reports/*
-!reports/地点维护流程.md
-!reports/名称匹配规则说明.md
+# 临时产物与报告（不入库）
+temps/
 # 生成物
 mobile/
-android/
 # 备份与压缩包
 *.zip
 *.bak

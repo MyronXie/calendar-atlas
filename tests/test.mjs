@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import {parseCalendar,expand,details,validCoord,escape} from '../core.js';
-const fixture=await fs.readFile(new URL('./fixture.ics',import.meta.url),'utf8');
+import {parseCalendar,expand,details,validCoord,escape} from '../lib/core.js';
+const fixture=await fs.readFile(new URL('./fixtures/fixture.ics',import.meta.url),'utf8');
 const es=parseCalendar(fixture);assert.equal(es.length,1);assert.deepEqual(details(es[0]).partners,['Alice','Bob']);assert.deepEqual(details(es[0]).places,['Test city','Museum','Park']);const out=expand(es,new Date('2026-01-01'),new Date('2026-01-05'));assert.equal(out.events.length,2);assert.equal(out.events[0].title,'Changed');assert.equal(out.events[0].start.toISOString(),'2026-01-03T12:00:00.000Z');assert.equal(expand(es,new Date('2026-01-01'),new Date('2026-01-05'),false).events.length,1);assert.equal(expand(es,new Date('2026-01-01T10:30Z'),new Date('2026-01-01T10:45Z')).events.length,1);assert.equal(validCoord({lat:91,lon:20}),false);assert.equal(validCoord({lat:'',lon:''}),false);assert.equal(escape('<script>'),'&lt;script&gt;');
 const modified=expand(es,new Date('2026-01-01'),new Date('2026-01-05'));
 modified.events[0].places.push('Temporary place');

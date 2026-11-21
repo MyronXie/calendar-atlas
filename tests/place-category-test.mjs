@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
-import {placeTypes,placeIndex} from '../place-categories.js';
-import {normalizePlace} from '../organize.js';
-import {selectEmoji} from '../emoji.js';
-import {readPlaces,updatePlaces} from '../csv-store.mjs';
+import {placeTypes,placeIndex} from '../lib/place-categories.js';
+import {normalizePlace} from '../lib/organize.js';
+import {selectEmoji} from '../lib/emoji.js';
+import {readPlaces,updatePlaces} from '../server/csv-store.mjs';
 const EXPECTED_TYPES=['food','fun','art','shop','out','sport','trans','stay','edu','home','other'];
 assert.deepEqual(Object.keys(placeTypes).sort(),[...EXPECTED_TYPES].sort(),'placeTypes 应包含全部类型短码');
 for(const k of EXPECTED_TYPES)assert.equal(typeof placeTypes[k],'string');

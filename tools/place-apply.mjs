@@ -3,10 +3,10 @@
 //   verify : keep/rename/closed from validity check.
 // Usage: node tools/place-apply.mjs --decisions <csv> --mode sync|verify
 import fs from 'node:fs/promises';
-import {parseCSV} from '../csv-store.mjs';
-import {atlasDataDirectory} from '../atlas-data.mjs';
+import {parseCSV} from '../server/csv-store.mjs';
+import {atlasDataDirectory} from '../server/atlas-data.mjs';
 import ICAL from '../vendor/ical.min.js';
-import {details} from '../core.js';
+import {details} from '../lib/core.js';
 import {norm, loadPlaces, savePlaces, todayStr, fmtKey, rootURL} from './place-common.mjs';
 const argv = process.argv.slice(2); const arg = (n, d) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : d; };
 const DEC = arg('--decisions'); const MODE = arg('--mode', 'verify');

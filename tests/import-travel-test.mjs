@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {compareCalendars} from '../calendar-import.js';
-import {isTrip,occurrenceCounts,occurrenceDays,tripDateRange,tripDetails,tripSelectLabel,tripShareFilename} from '../travel.js';
+import {compareCalendars} from '../lib/calendar-import.js';
+import {isTrip,occurrenceCounts,occurrenceDays,tripDateRange,tripDetails,tripSelectLabel,tripShareFilename} from '../lib/travel.js';
 
 const calendar=(...records)=>['BEGIN:VCALENDAR','VERSION:2.0',...records,'END:VCALENDAR'].join('\r\n');
 const entry=(uid,title,location,note='',stamp='20260401T100000Z')=>[
