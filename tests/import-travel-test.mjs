@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {compareCalendars} from '../lib/calendar-import.js';
-import {isTrip,occurrenceCounts,occurrenceDays,tripDateRange,tripDetails,tripSelectLabel,tripShareFilename} from '../lib/travel.js';
+import {eventListDays,isTrip,occurrenceCounts,occurrenceDays,tripDateRange,tripDetails,tripSelectLabel,tripShareFilename} from '../lib/travel.js';
 
 const calendar=(...records)=>['BEGIN:VCALENDAR','VERSION:2.0',...records,'END:VCALENDAR'].join('\r\n');
 const entry=(uid,title,location,note='',stamp='20260401T100000Z')=>[
@@ -76,3 +76,16 @@ assert.equal(tail.length,3);
 assert.equal(people(tail,true),3);
 assert.equal(places(tail,true).get('地点甲'),1);
 assert.equal(places(tail,true).has('未知地点'),false);
+
+const localDate=(day,hour=0,minute=0)=>new Date(2026,8,day,hour,minute);
+const crossDay={start:localDate(4,10,30),end:localDate(6,22),allDay:false};
+const show=({day,start,end,allDay})=>[day.getDate(),allDay,start.getHours(),start.getMinutes(),end.getHours(),end.getMinutes()];
+const fragments=eventListDays(crossDay,localDate(4),localDate(7));
+assert.deepEqual(fragments.map(show),[
+ [4,false,10,30,23,59],[5,true,0,0,23,59],[6,false,0,0,22,0],
+]);
+assert(fragments.every(row=>row.event===crossDay));
+assert.deepEqual(eventListDays(crossDay,localDate(5),localDate(5,23,59)).map(row=>row.day.getDate()),[5]);
+assert.deepEqual(eventListDays({...crossDay,end:localDate(6)},localDate(4),localDate(7)).map(row=>row.day.getDate()),[4,5]);
+assert.deepEqual(eventListDays({start:localDate(4),end:localDate(6),allDay:true},localDate(4),localDate(7))
+ .map(({day,allDay})=>[day.getDate(),allDay]),[[4,true],[5,true]]);

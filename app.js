@@ -9,7 +9,7 @@ import {parseCalendar,expand,details,escape as E,validCoord,setPlaceResolver} fr
 import {applyRules,normalizePlace,isPlaceExcluded} from './lib/organize.js';
 import {gcjToWgs,shortRegionName,geometryPolygons,containsPoint} from './lib/geo.js';
 import {compareCalendars} from './lib/calendar-import.js';
-import {isTrip,occurrenceCounts,occurrenceDays,tripDates,tripDateRange,tripDetails,tripPlace,tripSelectLabel,tripShareFilename} from './lib/travel.js';
+import {eventListDays,isTrip,occurrenceCounts,occurrenceDays,tripDates,tripDateRange,tripDetails,tripPlace,tripSelectLabel,tripShareFilename} from './lib/travel.js';
 import {compact as normalize,search as searchName} from './lib/place-name.js';
 import {classifyActivity} from './lib/activity.js';
 const sourceTimeIds = {calendar:'cal-version', places:'place-version', blacklist:'blacklist-version'};
@@ -40,7 +40,7 @@ try{
  const saved=JSON.parse(localStorage.getItem('atlas-count-options'));
  for(const id of countOptionIds)if(typeof saved?.[id]==='boolean')$(id).checked=saved[id];
 }catch{}
-let countedRows,filteredView,panelRefreshTimer;
+let countedRows,filteredView,panelRefreshTimer,eventRows=[];
 let draftCriterion,appliedCriteria=[];
 const cityBoundaryParts=new Map();
 let allCityBorders=false,cityIndexRequest,cityBoundaries=null,cityBoundaryRequest,boundaryLayer=null,overviewLayers=[],regionLabels=[],overviewLevel='',timelineKey='',timelineEvents=[];
@@ -119,6 +119,8 @@ function refresh({timeline=true,deferPanels=false}={}){
  filtered=others.length?scoped.filter(createEventMatcher(others,placeType,rankValues)):scoped;
  countedRows=null;
  filteredView={events:result.events,scoped:dates.length?scoped:null,matched:others.length?filtered:null,from,to};
+ eventRows=filtered.flatMap(event=>eventListDays(event,from,to))
+  .sort((a,b)=>b.day-a.day||Number(b.allDay)-Number(a.allDay)||b.start-a.start);
  limit=50;
  $('status').textContent=result.errors||result.capped?'部分重复事件无法完整展开，请缩小时间范围。':'';
  renderDateConditions(dates);
@@ -522,20 +524,18 @@ function showEventDetails(event){
   .map(([label,value])=>'<dt>'+E(label)+'</dt><dd>'+E(value)+'</dd>').join('');
  $('event-detail-filter').onclick=()=>{
   dialog.close();
-  filterSameEvent(event);
+  activeCriteria=eventCriteria(activeCriteria,event.title);
+  refresh();
+  fitPoints();
   $('search').focus?.({preventScroll:true});
  };
  dialog.showModal();
 }
 $('event-detail-close').onclick=()=>$('event-detail-dialog').close();
-function filterSameEvent(event){
- activeCriteria=eventCriteria(activeCriteria,event.title);
- refresh();
- fitPoints();
-}
+const eventRowKey=row=>eventKey(row.event)+'|'+row.day.toISOString();
 function renderEvents(){
- const rows=filtered,container=$('events');
- $('eventtitle').textContent='事件 · '+rows.length;
+ const rows=eventRows,container=$('events');
+ $('eventtitle').textContent='事件 · '+filtered.length;
  // 有地点/人物筛选且对应列被收起时，临时展开该列，保证匹配到的名称可见
  const forcePlaces=appliedCriteria.some(c=>['place','placeGroup','placeType','businessArea'].includes(c.kind)||c.kind==='keyword'&&c.scope==='place');
  const forcePeople=appliedCriteria.some(c=>c.kind==='person'||c.kind==='keyword'&&c.scope==='person');
@@ -543,12 +543,12 @@ function renderEvents(){
  container.classList.toggle('hide-places',!showPlaces);
  container.classList.toggle('hide-people',!showPeople);
  let previousDay='';
- container.innerHTML=rows.slice(0,limit).map((event,i)=>{
-  const key=eventKey(event);
-  const start=event.start,year=String(start.getFullYear());
+ container.innerHTML=rows.slice(0,limit).map(({event,start,end,allDay},i)=>{
+  const key=eventRowKey(rows[i]);
+  const year=String(start.getFullYear());
   const [month,date]=[start.getMonth()+1,start.getDate()]
    .map(value=>String(value).padStart(2,'0'));
-  const dateField=(unit,value)=>appliedCriteria.some(c=>c.scope===unit&&matchesCriterionDate(c,start,event.allDay))
+  const dateField=(unit,value)=>appliedCriteria.some(c=>c.scope===unit&&matchesCriterionDate(c,start,allDay))
    ?'<mark class="filter-highlight">'+value+'</mark>':value;
   const day=year+'-'+month+'-'+date;
   const weekday='（'+dateField('weekday','日一二三四五六'[start.getDay()])+'）';
@@ -556,12 +556,11 @@ function renderEvents(){
    +dateField('year',year)+'/'+dateField('month',month)+'/'+dateField('date',date)+weekday+'</time></h3>';
   previousDay=day;
   const startClock=eventClock(start);
-  const hasEnd=!event.allDay&&event.end>start;
-  const endClock=hasEnd?eventClock(event.end):'';
-  const endDay=hasEnd?dateInputValue(event.end):day;
-  const time=event.allDay?'全天':dateField('hour',startClock);
-  const timeLabel=event.allDay?day+' 全天':day+' '+startClock+(hasEnd?' 至 '+(endDay===day?'':endDay+' ')+endClock:'');
-  const endTime=hasEnd?'<time class="event-time-end" datetime="'+event.end.toISOString()+'">'+endClock+'</time>':'';
+  const hasEnd=!allDay&&end>start;
+  const endClock=hasEnd?eventClock(end):'';
+  const time=allDay?'全天':dateField('hour',startClock);
+  const timeLabel=allDay?day+' 全天':day+' '+startClock+(hasEnd?' 至 '+endClock:'');
+  const endTime=hasEnd?'<time class="event-time-end" datetime="'+end.toISOString()+'">'+endClock+'</time>':'';
   const trip=isTrip(event)?'<button type="button" class="event-action event-trip" data-trip-event="'+i+'" aria-label="查看行程详细" title="查看行程详细">'+entityIcon('trip')+'</button>':'';
   // 备注关键词命中：只检查说明性文字（忽略 Partner/Place 行），命中时高亮显示
   const noteText=searchableEventNote(event.note);
@@ -578,11 +577,9 @@ function renderEvents(){
    ||c.kind==='businessArea'&&searchName(businessArea(name))===searchName(c.value)
    ||c.kind==='keyword'&&matchesCriterionText(c,'place',name))));
   return heading+'<article class="event"><div class="eventrow"><button type="button" class="event-time" data-event-range="'+i
-   +'" title="'+E(timeLabel)+'" aria-label="'+E('查看 '+timeLabel+' 的事件')+'"><time datetime="'+(event.allDay?day:event.start.toISOString())+'">'+time+'</time>'+endTime+'</button>'
+   +'" title="'+E(timeLabel)+'" aria-label="'+E('查看 '+timeLabel+' 所属事件的日期范围')+'"><time datetime="'+(allDay?day:start.toISOString())+'">'+time+'</time>'+endTime+'</button>'
    +'<div class="event-details"><div class="eventname"><button type="button" class="eventtitle" data-event-detail="'+i
-   +'" aria-haspopup="dialog" aria-controls="event-detail-dialog">'+eventTitleText(event.title)+'</button>'
-   +'<button type="button" class="event-action" data-filter-event="'+i+'" title="筛选此事件" aria-label="筛选此事件">'
-   +entityIcon('filter')+'</button>'+trip+'</div>'
+   +'" aria-haspopup="dialog" aria-controls="event-detail-dialog">'+eventTitleText(event.title)+'</button>'+trip+'</div>'
    +eventEntities(event.places,'place',i,showPlaces,expandedEventPlaces.has(key),matchedPlaces)
    +eventEntities(event.partners,'person',i,showPeople)
    +noteHtml
@@ -591,7 +588,7 @@ function renderEvents(){
   :'<div class="empty">这个时段无事件 <button type="button" data-change-event-range>修改时间范围</button></div>');
  $('more').hidden=rows.length<=limit;
  container.querySelectorAll('[data-place-toggle]').forEach(button=>button.onclick=()=>{
-  const key=eventKey(rows[+button.dataset.placeToggle]),expanded=!expandedEventPlaces.has(key);
+  const key=eventRowKey(rows[+button.dataset.placeToggle]),expanded=!expandedEventPlaces.has(key);
   if(expanded)expandedEventPlaces.add(key);
   else expandedEventPlaces.delete(key);
   button.parentElement.classList.toggle('is-expanded',expanded);
@@ -600,21 +597,17 @@ function renderEvents(){
   button.setAttribute('aria-label',expanded?'收起地点':'展开地点');
   scheduleEventLayout();
  });
- container.querySelectorAll('[data-event-range]').forEach(el=>el.onclick=()=>selectEventRange(rows[+el.dataset.eventRange]));
+ container.querySelectorAll('[data-event-range]').forEach(el=>el.onclick=()=>selectEventRange(rows[+el.dataset.eventRange].event));
  for(const [kind,field] of [['place','places'],['person','partners']]){
   const key=kind==='place'?'filterPlace':'filterPerson';
   container.querySelectorAll('[data-filter-'+kind+']').forEach(el=>el.onclick=()=>setEntityFilter(field,el.dataset[key]));
  }
- container.querySelectorAll('[data-filter-event]').forEach(el=>el.onclick=()=>{
-  filterSameEvent(rows[+el.dataset.filterEvent]);
-  $('search').focus?.({preventScroll:true});
- });
- container.querySelectorAll('[data-event-detail]').forEach(el=>el.onclick=()=>showEventDetails(rows[+el.dataset.eventDetail]));
+ container.querySelectorAll('[data-event-detail]').forEach(el=>el.onclick=()=>showEventDetails(rows[+el.dataset.eventDetail].event));
  container.querySelector('[data-reset-event-filters]')?.addEventListener('click',()=>{
   activeCriteria=[];$('search').value='';refresh();fitPoints();$('search').focus?.();
  });
  container.querySelector('[data-change-event-range]')?.addEventListener('click',()=>$('timeline-range').click());
- container.querySelectorAll('[data-trip-event]').forEach(el=>el.onclick=()=>openTrips(rows[+el.dataset.tripEvent]));
+ container.querySelectorAll('[data-trip-event]').forEach(el=>el.onclick=()=>openTrips(rows[+el.dataset.tripEvent].event));
  scheduleEventLayout();
  scheduleEventJump();
 }

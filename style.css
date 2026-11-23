@@ -528,7 +528,6 @@ body[data-color-mode=night]{color-scheme:dark;--overlay:#0009;--map-label-halo:#
  .eventsearchbar select{width:72px}
  .eventsearchbar .eventsearch{flex:1 1 86px;min-width:0}
  .eventrow{grid-template-columns:var(--event-time-width) minmax(0,1fr);gap:5px 8px}
- .eventname [data-filter-event]{display:none}
  .event-details{display:flex;flex-direction:column;gap:5px;min-width:0}
  .evententities:empty{display:none}
  .event-note{margin-top:2px}
