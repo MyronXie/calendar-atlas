@@ -10,7 +10,8 @@ import {applyRules,normalizePlace,isPlaceExcluded} from './lib/organize.js';
 import {gcjToWgs,shortRegionName,geometryPolygons,containsPoint} from './lib/geo.js';
 import {compareCalendars} from './lib/calendar-import.js';
 import {isTrip,occurrenceCounts,occurrenceDays,tripDates,tripDateRange,tripDetails,tripPlace,tripSelectLabel,tripShareFilename} from './lib/travel.js';
-import {compact as normalize} from './lib/place-name.js';
+import {compact as normalize,search as searchName} from './lib/place-name.js';
+import {classifyActivity} from './lib/activity.js';
 const sourceTimeIds = {calendar:'cal-version', places:'place-version', blacklist:'blacklist-version'};
 const mobileSource=document.documentElement?.dataset?.mobileSource;
 const mobileImport=mobileSource==='import';
@@ -33,7 +34,7 @@ try{
   if(typeof saved?.[key]==='boolean')shanghaiLayerOptions[key]=saved[key];
  }
 }catch{}
-const $=id=>document.getElementById(id);let currentTheme=resolveTheme(localStorage.getItem('atlas-theme'));let nightMode=localStorage.getItem('atlas-night')==='1';const colors=()=> (nightMode?nightPalettes:palettes)[currentTheme];const collapsedSections={map:true,timeline:true,eventlist:false};let activeCriteria=[];let rankHidden={places:[],types:[],partners:[],groups:[]};try{const saved=JSON.parse(localStorage.getItem('atlas-rank-hidden-v1'));for(const k of Object.keys(rankHidden))if(Array.isArray(saved?.[k]))rankHidden[k]=saved[k].filter(n=>typeof n==='string');}catch{}let source=[],filtered=[],world,china,cities=[],tab='places',limit=50,points=[];
+const $=id=>document.getElementById(id);let currentTheme=resolveTheme(localStorage.getItem('atlas-theme'));let nightMode=localStorage.getItem('atlas-night')==='1';const colors=()=> (nightMode?nightPalettes:palettes)[currentTheme];const collapsedSections={map:true,timeline:true,eventlist:false};let activeCriteria=[];let rankHidden={places:[],partners:[],groups:[],activities:[],areas:[]};try{const saved=JSON.parse(localStorage.getItem('atlas-rank-hidden-v1'));for(const k of Object.keys(rankHidden))if(Array.isArray(saved?.[k]))rankHidden[k]=saved[k].filter(n=>typeof n==='string');}catch{}let source=[],filtered=[],world,china,cities=[],tab='places',limit=50,points=[];
 const countOptionIds=['merge-same-day','split-trip-days','recurring'];
 try{
  const saved=JSON.parse(localStorage.getItem('atlas-count-options'));
@@ -115,7 +116,7 @@ function refresh({timeline=true,deferPanels=false}={}){
  const others=appliedCriteria.filter(c=>c.kind!=='time');
  $('timeline-range').setAttribute('aria-label','修改时间范围 '+rangeLabel);
  const scoped=dates.length?result.events.filter(createEventMatcher(dates,placeType)):result.events;
- filtered=others.length?scoped.filter(createEventMatcher(others,placeType)):scoped;
+ filtered=others.length?scoped.filter(createEventMatcher(others,placeType,rankValues)):scoped;
  countedRows=null;
  filteredView={events:result.events,scoped:dates.length?scoped:null,matched:others.length?filtered:null,from,to};
  limit=50;
@@ -191,8 +192,7 @@ function renderDateConditions(criteria){
  const indicator=$('timeline-range-indicator'),wasHidden=indicator.hidden;
  updateFilterHint('timeline-range-indicator',groups.map(group=>group.label));
  if(indicator.hidden!==wasHidden)scheduleSectionTools();
- chips.innerHTML=groups.map(({label},index)=>'<button type="button" data-remove-date="'+index
-  +'" aria-label="'+E('移除日期条件：'+label)+'"><strong>'+E(label)+'</strong>'+entityIcon('dialog-close','filter-chip-dismiss')+'</button>').join('');
+ chips.innerHTML=groups.map(({label},index)=>filterChip('data-remove-date="'+index+'"','移除日期条件：'+label,label)).join('');
  for(const button of chips.querySelectorAll('[data-remove-date]'))button.onclick=()=>{
   const index=Number(button.dataset.removeDate),{scope,values}=groups[index];
   activeCriteria=activeCriteria.filter(c=>c.kind!=='time'||c.scope!==scope||!values.includes(Number(c.value)));
@@ -322,19 +322,36 @@ if(typeof ResizeObserver==='function'){
  new ResizeObserver(fitFrequencyChart).observe($('day-frequency-bars'));
 }
 function placeType(name){return baseCoords.get(normalizePlace(name))?.type?.trim() || 'other';}
-function typeLabel(type){return Object.hasOwn(placeTypes,type) ? placeTypes[type] : type;}
-const rankKinds={places:'place',types:'placeType',partners:'person',groups:'group'};
+const rankKinds={places:'place',partners:'person',groups:'group',activities:'activity',areas:'businessArea'};
+let activityCache=new WeakMap();
+function eventActivity(event){
+ if(!activityCache.has(event))activityCache.set(event,classifyActivity(event,name=>baseCoords.get(normalizePlace(name))));
+ return activityCache.get(event);
+}
+function businessArea(name){
+ return (baseCoords.get(normalizePlace(name))?.business_area??'').normalize('NFKC').trim();
+}
+function rankValues(event,kind){
+ if(kind==='businessArea')return event.places.map(businessArea).filter(Boolean);
+ const activity=eventActivity(event);
+ return activity?[activity.label]:[];
+}
 function counts(field){
- const countsByName=field==='groups'?occurrenceCounts(filtered,event=>[eventParts(event.title).group].filter(Boolean),false)
-  :occurrenceCounts(currentCountedRows(),({event,places})=>field==='types'?places.map(placeType)
-   :field==='places'?places:event.partners,$('merge-same-day').checked);
+ const countsByName=field==='activities'?occurrenceCounts(filtered,event=>rankValues(event,'activity'),false)
+  :field==='areas'?occurrenceCounts(
+   filteredView?occurrenceDays(filtered,filteredView.from,filteredView.to,true):[],
+   ({places})=>places.map(businessArea).filter(Boolean),true)
+  :field==='groups'?occurrenceCounts(filtered,event=>[eventParts(event.title).group].filter(Boolean),false)
+  :occurrenceCounts(currentCountedRows(),({event,places})=>field==='places'?places:event.partners,$('merge-same-day').checked);
  return [...countsByName].sort((a,b)=>b[1]-a[1]);
 }
 function applyCriterion(c){activeCriteria=toggleCriterion(activeCriteria,c);refresh();fitPoints();}
-function setEntityFilter(field,name){applyCriterion(criterion(rankKinds[field],name,field==='types'?{label:typeLabel(name)}:{}));}
+function setEntityFilter(field,name){applyCriterion(criterion(rankKinds[field],name));}
 function setMapFilter(p){const level=mapLevel();const names=['place','shanghai'].includes(level)?[...p.names]:[...new Set(source.flatMap(e=>details(e).places))].filter(n=>{const a=pos(n);return a&&(level==='city'?[a.country,a.province,a.city].join('|')===p.regionKey:a[level]===p.name);});applyCriterion(names.length===1?criterion('place',names[0]):criterion('placeGroup',p.name,{values:names}));}
 function renderRank(){
- const field=tab,kind=rankKinds[field],label=n=>field==='types'?typeLabel(n):n,all=counts(field),sections=rankSections(all,rankHidden[field]),max=all[0]?.[1]||1;
+ $('rank-place-options').hidden=tab!=='places';
+ const field=tab==='places'&&$('rank-by-area').checked?'areas':tab;
+ const kind=rankKinds[field],all=counts(field),sections=rankSections(all,rankHidden[field]),max=all[0]?.[1]||1;
  const ranking=$('ranking');
  const hiddenIcon='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path d="m3 3 18 18"/></svg>';
  const row=([name,count],index,hidden)=>{
@@ -342,17 +359,21 @@ function renderRank(){
   const action=hidden?'恢复排行':'不参与排名';
   return '<div class="rankrow '+(hidden?'rank-demoted ':'')+(selected?'selected':'')+'">'
    +'<button type="button" class="num" data-rank-toggle="'+E(name)+'" title="'+action
-   +'" aria-label="'+E(label(name)+'，'+(hidden?'不参与排名，':'第 '+(index+1)+' 名，')+action)
+   +'" aria-label="'+E(name+'，'+(hidden?'不参与排名，':'第 '+(index+1)+' 名，')+action)
    +'" aria-pressed="'+hidden+'">'+(hidden?hiddenIcon:index+1)+'</button>'
    +'<button type="button" class="rank-filter" data-rank-name="'+E(name)+'" aria-pressed="'+selected
-   +'"><span class="label">'+E(label(name))+'<span class="bar" style="width:'+100*count/max+'%"></span></span><b>'
+   +'"><span class="label">'+E(name)+'<span class="bar" style="width:'+100*count/max+'%"></span></span><b>'
    +count+'</b></button></div>';
  };
  ranking.innerHTML=all.length?sections.visible.map((r,i)=>row(r,i,false)).join('')
   +(sections.hidden.length?'<div class="rank-divider">不参与排名</div>'+sections.hidden.map((r,i)=>row(r,i,true)).join(''):'')
-  :'<div class="empty">此范围内没有记录</div>';
+  :'<div class="empty">'+(field==='areas'?'此范围内没有已标注商圈的到访。'
+   :field==='activities'?'此范围内没有识别到活动类型。':'此范围内没有记录')+'</div>';
  for(const button of ranking.querySelectorAll('[data-rank-name]')){
-  button.onclick=()=>setEntityFilter(field,button.dataset.rankName);
+  button.onclick=()=>{
+   setEntityFilter(field,button.dataset.rankName);
+   if((field==='activities'||field==='areas')&&narrowDrawers?.matches)drawer(false);
+  };
  }
  for(const button of ranking.querySelectorAll('[data-rank-toggle]')){
   button.onclick=()=>{
@@ -364,6 +385,7 @@ function renderRank(){
   };
  }
 }
+$('rank-by-area').onchange=renderRank;
 const expandedEventPlaces=new Set();
 const eventKey=event=>(event.uid||event.title)+'|'+event.start.toISOString();
 const eventColumns={places:true,people:true};
@@ -376,6 +398,10 @@ function eventTitleText(title){
  return mark('group',group,title.slice(0,separator))+mark('event',name,title.slice(separator));
 }
 const entityIcon=(kind,extraClass='')=>'<svg class="entity-icon '+extraClass+'" width="16" height="16" aria-hidden="true"><use href="#icon-'+kind+'"/></svg>';
+function filterChip(attribute,label,value,icon=''){
+ return '<button type="button" '+attribute+' aria-label="'+E(label)+'">'
+  +(icon?entityIcon(icon):'')+'<strong>'+E(value)+'</strong>'+entityIcon('dialog-close','filter-chip-dismiss')+'</button>';
+}
 function highlightNote(text,values){
  const alternatives=[...new Set(values)].filter(Boolean).sort((a,b)=>b.length-a.length)
   .map(value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
@@ -391,17 +417,17 @@ function eventEntities(names,kind,index,visible,expanded=false,matchedNames=null
  const isPlace=kind==='place';
  const wrapper='evententities '+(isPlace?'eventplaces':'eventpeople')+(expanded?' is-expanded':'');
  const hidden=visible?'':' hidden';
- if(!names.length)return '<div class="'+wrapper+'"'+hidden+(isPlace?' data-event-index="'+index+'"':'')+'></div>';
+ if(!names.length)return '<div class="'+wrapper+'"'+hidden+'></div>';
  const links=names.map(name=>{
   const matched=Boolean(matchedNames&&matchedNames.has(name));
-  return '<button class="entitylink'+(filterHighlights(kind,name)?' filter-highlight':'')+'" data-filter-'+kind+'="'+E(name)+'" aria-pressed="'
+  return '<button class="entitylink'+(matched||filterHighlights(kind,name)?' filter-highlight':'')+'" data-filter-'+kind+'="'+E(name)+'" aria-pressed="'
    +activeCriteria.some(c=>c.id===criterion(kind,name).id)+'"'+(matched?' data-place-match="1"':'')+'>'+E(name)+'</button>';
  }).join('');
  const listId=isPlace?' id="eventplaces-'+index+'"':'';
  const icon=entityIcon(kind,'event-entity-icon');
  const more=isPlace?'<button type="button" class="event-action event-places-more" data-place-toggle="'+index+'" aria-controls="eventplaces-'+index
   +'" aria-expanded="'+expanded+'" aria-label="'+(expanded?'收起地点':'展开地点')+'" title="'+(expanded?'收起地点':'展开地点')+'" hidden>'+entityIcon('chevron')+'</button>':'';
- return '<div class="'+wrapper+'"'+hidden+(isPlace?' data-event-index="'+index+'"':'')+'>'+icon+'<div class="event-entity-list"'+listId+'>'+links+'</div>'+more+'</div>';
+ return '<div class="'+wrapper+'"'+hidden+'>'+icon+'<div class="event-entity-list"'+listId+'>'+links+'</div>'+more+'</div>';
 }
 let eventLayoutFrame=0;
 function scheduleEventLayout(){
@@ -418,8 +444,6 @@ function scheduleEventLayout(){
    if(!expanded&&[...group.querySelectorAll('[data-place-match]')].some(link=>link.getBoundingClientRect().bottom>bottom+1)){
     group.classList.add('is-expanded');
     expanded=true;
-    const event=filtered[+group.dataset.eventIndex];
-    if(event)expandedEventPlaces.add(eventKey(event));
     button.setAttribute('aria-expanded','true');
     button.setAttribute('aria-label','收起地点');
     button.title='收起地点';
@@ -473,28 +497,71 @@ function selectEventRange(event){
  if(collapsedSections.timeline)setSectionCollapsed('timeline',false);
  if(typeof matchMedia==='function')revealTimeline();
 }
+function eventClock(date){
+ return String(date.getHours()).padStart(2,'0')+':'+String(date.getMinutes()).padStart(2,'0');
+}
+function showEventDetails(event){
+ const dialog=$('event-detail-dialog');
+ const activity=eventActivity(event);
+ const source=activity?[activity.source,activity.place].filter(Boolean).join(' · '):'';
+ const note=searchableEventNote(event.note);
+ const day=dateInputValue(event.start);
+ const endDay=event.end>event.start?dateInputValue(event.end):day;
+ const time=event.allDay?day+' · 全天':day+' '+eventClock(event.start)
+  +(event.end>event.start?' 至 '+(endDay===day?'':endDay+' ')+eventClock(event.end):'');
+ const rows=[
+  ['时间',time],
+  ['活动类型',activity?activity.label+'（'+source+'）':'未识别'],
+  ['地点',event.places.join('、')],
+  ['商圈', [...new Set(rankValues(event,'businessArea'))].join('、')],
+  ['同伴',event.partners.join('、')],
+  ['备注',note],
+ ];
+ $('event-detail-title').textContent=event.title;
+ $('event-detail-data').innerHTML=rows.filter(([,value])=>value)
+  .map(([label,value])=>'<dt>'+E(label)+'</dt><dd>'+E(value)+'</dd>').join('');
+ $('event-detail-filter').onclick=()=>{
+  dialog.close();
+  filterSameEvent(event);
+  $('search').focus?.({preventScroll:true});
+ };
+ dialog.showModal();
+}
+$('event-detail-close').onclick=()=>$('event-detail-dialog').close();
+function filterSameEvent(event){
+ activeCriteria=eventCriteria(activeCriteria,event.title);
+ refresh();
+ fitPoints();
+}
 function renderEvents(){
  const rows=filtered,container=$('events');
  $('eventtitle').textContent='事件 · '+rows.length;
  // 有地点/人物筛选且对应列被收起时，临时展开该列，保证匹配到的名称可见
- const forcePlaces=appliedCriteria.some(c=>c.kind==='place'||c.kind==='placeGroup'||c.kind==='placeType');
- const forcePeople=appliedCriteria.some(c=>c.kind==='person');
- if(forcePlaces&&!eventColumns.places){eventColumns.places=true;$('showplaces')?.setAttribute('aria-pressed','true');}
- if(forcePeople&&!eventColumns.people){eventColumns.people=true;$('showpeople')?.setAttribute('aria-pressed','true');}
- const {places:showPlaces,people:showPeople}=eventColumns;
+ const forcePlaces=appliedCriteria.some(c=>['place','placeGroup','placeType','businessArea'].includes(c.kind)||c.kind==='keyword'&&c.scope==='place');
+ const forcePeople=appliedCriteria.some(c=>c.kind==='person'||c.kind==='keyword'&&c.scope==='person');
+ const showPlaces=eventColumns.places||forcePlaces,showPeople=eventColumns.people||forcePeople;
  container.classList.toggle('hide-places',!showPlaces);
  container.classList.toggle('hide-people',!showPeople);
+ let previousDay='';
  container.innerHTML=rows.slice(0,limit).map((event,i)=>{
   const key=eventKey(event);
   const start=event.start,year=String(start.getFullYear());
-  const [month,date,hour,minute]=[start.getMonth()+1,start.getDate(),start.getHours(),start.getMinutes()]
+  const [month,date]=[start.getMonth()+1,start.getDate()]
    .map(value=>String(value).padStart(2,'0'));
   const dateField=(unit,value)=>appliedCriteria.some(c=>c.scope===unit&&matchesCriterionDate(c,start,event.allDay))
    ?'<mark class="filter-highlight">'+value+'</mark>':value;
-  const weekday=' ('+dateField('weekday','日一二三四五六'[start.getDay()])+')';
-  const time='<span class="event-date">'+dateField('year',year)+'/'+dateField('month',month)+'/'+dateField('date',date)
-   +'<span class="event-weekday-wide">'+weekday+'</span></span> <span class="event-clock">'+dateField('hour',hour+':'+minute)
-   +'<span class="event-weekday-narrow">'+weekday+'</span></span>';
+  const day=year+'-'+month+'-'+date;
+  const weekday='（'+dateField('weekday','日一二三四五六'[start.getDay()])+'）';
+  const heading=day===previousDay?'':'<h3 class="event-day"><time datetime="'+day+'">'
+   +dateField('year',year)+'/'+dateField('month',month)+'/'+dateField('date',date)+weekday+'</time></h3>';
+  previousDay=day;
+  const startClock=eventClock(start);
+  const hasEnd=!event.allDay&&event.end>start;
+  const endClock=hasEnd?eventClock(event.end):'';
+  const endDay=hasEnd?dateInputValue(event.end):day;
+  const time=event.allDay?'全天':dateField('hour',startClock);
+  const timeLabel=event.allDay?day+' 全天':day+' '+startClock+(hasEnd?' 至 '+(endDay===day?'':endDay+' ')+endClock:'');
+  const endTime=hasEnd?'<time class="event-time-end" datetime="'+event.end.toISOString()+'">'+endClock+'</time>':'';
   const trip=isTrip(event)?'<button type="button" class="event-action event-trip" data-trip-event="'+i+'" aria-label="查看行程详细" title="查看行程详细">'+entityIcon('trip')+'</button>':'';
   // 备注关键词命中：只检查说明性文字（忽略 Partner/Place 行），命中时高亮显示
   const noteText=searchableEventNote(event.note);
@@ -508,15 +575,20 @@ function renderEvents(){
   const matchedPlaces=new Set(event.places.filter(name=>appliedCriteria.some(c=>
    (c.kind==='place'||c.kind==='placeGroup')&&matchesCriterionText(c,'place',name)
    ||c.kind==='placeType'&&placeType(name)===c.value
+   ||c.kind==='businessArea'&&searchName(businessArea(name))===searchName(c.value)
    ||c.kind==='keyword'&&matchesCriterionText(c,'place',name))));
-  return '<article class="event"><div class="eventrow"><button type="button" class="event-time" data-event-range="'+i
-   +'" title="查看这段时间的事件"><time datetime="'+event.start.toISOString()+'">'+time+'</time></button>'
-   +'<div class="event-details"><div class="eventname"><button class="eventtitle" data-filter-event="'+E(event.title)+'" title="按组别与事件筛选">'+eventTitleText(event.title)+'</button>'+trip+'</div>'
+  return heading+'<article class="event"><div class="eventrow"><button type="button" class="event-time" data-event-range="'+i
+   +'" title="'+E(timeLabel)+'" aria-label="'+E('查看 '+timeLabel+' 的事件')+'"><time datetime="'+(event.allDay?day:event.start.toISOString())+'">'+time+'</time>'+endTime+'</button>'
+   +'<div class="event-details"><div class="eventname"><button type="button" class="eventtitle" data-event-detail="'+i
+   +'" aria-haspopup="dialog" aria-controls="event-detail-dialog">'+eventTitleText(event.title)+'</button>'
+   +'<button type="button" class="event-action" data-filter-event="'+i+'" title="筛选此事件" aria-label="筛选此事件">'
+   +entityIcon('filter')+'</button>'+trip+'</div>'
    +eventEntities(event.places,'place',i,showPlaces,expandedEventPlaces.has(key),matchedPlaces)
    +eventEntities(event.partners,'person',i,showPeople)
    +noteHtml
    +'</div></div></article>';
- }).join('')||'<div class="empty">无事件</div>';
+ }).join('')||(appliedCriteria.length?'<div class="empty">当前筛选无事件 <button type="button" data-reset-event-filters>清除全部筛选</button></div>'
+  :'<div class="empty">这个时段无事件 <button type="button" data-change-event-range>修改时间范围</button></div>');
  $('more').hidden=rows.length<=limit;
  container.querySelectorAll('[data-place-toggle]').forEach(button=>button.onclick=()=>{
   const key=eventKey(rows[+button.dataset.placeToggle]),expanded=!expandedEventPlaces.has(key);
@@ -533,7 +605,15 @@ function renderEvents(){
   const key=kind==='place'?'filterPlace':'filterPerson';
   container.querySelectorAll('[data-filter-'+kind+']').forEach(el=>el.onclick=()=>setEntityFilter(field,el.dataset[key]));
  }
- container.querySelectorAll('[data-filter-event]').forEach(el=>el.onclick=()=>{activeCriteria=eventCriteria(activeCriteria,el.dataset.filterEvent);refresh();fitPoints();});
+ container.querySelectorAll('[data-filter-event]').forEach(el=>el.onclick=()=>{
+  filterSameEvent(rows[+el.dataset.filterEvent]);
+  $('search').focus?.({preventScroll:true});
+ });
+ container.querySelectorAll('[data-event-detail]').forEach(el=>el.onclick=()=>showEventDetails(rows[+el.dataset.eventDetail]));
+ container.querySelector('[data-reset-event-filters]')?.addEventListener('click',()=>{
+  activeCriteria=[];$('search').value='';refresh();fitPoints();$('search').focus?.();
+ });
+ container.querySelector('[data-change-event-range]')?.addEventListener('click',()=>$('timeline-range').click());
  container.querySelectorAll('[data-trip-event]').forEach(el=>el.onclick=()=>openTrips(rows[+el.dataset.tripEvent]));
  scheduleEventLayout();
  scheduleEventJump();
@@ -543,26 +623,27 @@ function renderFilterChips(){
  updateFilterHint('event-filter-indicator',appliedCriteria.filter(c=>c.kind!=='time').map(c=>criterionDisplay(c).value));
  const chip=(c,attribute)=>{
   const {label,icon,value}=criterionDisplay(c);
-  return '<button '+attribute+' aria-label="'+E('移除'+label+'筛选：'+value)+'">'
-   +(icon?entityIcon(icon):E(label)+'：')+'<strong>'+E(value)+'</strong>'+entityIcon('dialog-close','filter-chip-dismiss')+'</button>';
+  return filterChip(attribute,'移除'+label+'筛选：'+value,icon?value:label+'：'+value,icon);
  };
  container.innerHTML=activeCriteria.map((c,i)=>c.kind==='time'?'':chip(c,'data-remove-filter="'+i+'"')).join('')
   +(draftCriterion&&!activeCriteria.some(c=>c.id===draftCriterion.id)?chip(draftCriterion,'data-remove-draft'):'');
  $('filter-summary').hidden=!container.innerHTML&&$('timeline-date-conditions').hidden;
  container.querySelectorAll('[data-remove-filter]').forEach(el=>el.onclick=()=>{
-  activeCriteria.splice(+el.dataset.removeFilter,1);
+  const index=+el.dataset.removeFilter;
+  activeCriteria.splice(index,1);
   refresh();
   fitPoints();
+  (container.querySelector('[data-remove-filter="'+index+'"]')||container.querySelector('button')||$('search')).focus?.({preventScroll:true});
  });
- container.querySelector('[data-remove-draft]')?.addEventListener('click',()=>{$('search').value='';refresh();});
+ container.querySelector('[data-remove-draft]')?.addEventListener('click',()=>{$('search').value='';refresh();$('search').focus?.({preventScroll:true});});
 }
 
 let regionAuto={};
 function fillAddressRegions(){const f=$('editform'),address=f.elements.address.value;if(!address.trim())return;let fallback={};if(world&&china&&validCoord({lat:f.elements.lat.value,lon:f.elements.lon.value})){const [lat,lon]=toWgs(+f.elements.lat.value,+f.elements.lon.value,f.elements.datum.value);fallback=inferRegion(lat,lon);}const inferred=regionFromAddress(address,cities,china?.features.map(f=>f.properties.name)||[],fallback);for(const k of ['country','province','city']){const value=inferred[k]||'';if(!f.elements[k].value||f.elements[k].value===regionAuto[k])f.elements[k].value=value;regionAuto[k]=value;}}
 const isClosed=v=>String(v||'').toLowerCase()==='no';
-function edit(name=''){editingVersion=csvVersion;regionAuto={};$('editerror').textContent='';const original=baseCoords.get(normalizePlace(name));const p=original||{};const form=$('editform');for(const k of ['address','country','province','city','lat','lon','type','labels'])form.elements[k].value=p[k]||(k==='type'?'other':'');form.elements.location.value=original?.location||name;form.elements.location.readOnly=Boolean(name);form.elements.valid.value=isClosed(p.valid)?'no':'';form.dataset.origValid=p.valid||'';form.elements.datum.value=p.datum||(original&&validCoord(p)&&isMainland(+p.lat,+p.lon)?$('datum').value:'wgs84');fillAddressRegions();$('editor').showModal();}
-async function readCSV(){const r=await fetch('api/places',{cache:'no-store'});if(!r.ok)throw Error('CSV 读取失败');const data=await r.json();csvVersion=data.version;reference.places=data.places;setupReference();cache.clear();return data;}
-async function writeCSV(updates,version=csvVersion){const r=await fetch('api/places',{method:'POST',headers:{'Content-Type':'application/json','X-Atlas-Write':'1'},body:JSON.stringify({version,updates})});const data=await r.json();if(!r.ok)throw Error(data.error||'CSV 保存失败');csvVersion=data.version;reference.places=data.places;setupReference();cache.clear();refresh();updateDataTimes(['places']);}
+function edit(name=''){editingVersion=csvVersion;regionAuto={};$('editerror').textContent='';const original=baseCoords.get(normalizePlace(name));const p=original||{};const form=$('editform');for(const k of ['address','country','province','city','lat','lon','type','labels','business_area'])form.elements[k].value=p[k]||(k==='type'?'other':'');form.elements.location.value=original?.location||name;form.elements.location.readOnly=Boolean(name);form.elements.valid.value=isClosed(p.valid)?'no':'';form.dataset.origValid=p.valid||'';form.elements.datum.value=p.datum||(original&&validCoord(p)&&isMainland(+p.lat,+p.lon)?$('datum').value:'wgs84');fillAddressRegions();$('editor').showModal();}
+async function readCSV(){const r=await fetch('api/places',{cache:'no-store'});if(!r.ok)throw Error('CSV 读取失败');const data=await r.json();csvVersion=data.version;reference.places=data.places;setupReference();return data;}
+async function writeCSV(updates,version=csvVersion){const r=await fetch('api/places',{method:'POST',headers:{'Content-Type':'application/json','X-Atlas-Write':'1'},body:JSON.stringify({version,updates})});const data=await r.json();if(!r.ok)throw Error(data.error||'CSV 保存失败');csvVersion=data.version;reference.places=data.places;setupReference();refresh();updateDataTimes(['places']);}
 for(const key of ['address','lat','lon','datum'])$('editform').elements[key].addEventListener('change',fillAddressRegions);$('editform').elements.address.addEventListener('input',fillAddressRegions);for(const key of ['country','province','city'])$('editform').elements[key].addEventListener('input',()=>{regionAuto[key]=null;});
 $('editform').onsubmit=async e=>{e.preventDefault();const p=Object.fromEntries(new FormData(e.target));if(p.valid!=='no'){const ov=e.target.dataset.origValid||'';p.valid=(ov&&ov!=='no')?ov:'';}$('saveplace').disabled=true;$('editerror').textContent='';try{await writeCSV([p],editingVersion);$('editor').close();}catch(err){$('editerror').textContent=err.message;}finally{$('saveplace').disabled=false;}};
 $('cancel').onclick=()=>$('editor').close();
@@ -928,7 +1009,16 @@ for(const [id,key] of [['showplaces','places'],['showpeople','people']]){
 }
 
 
-function setupReference(){baseCoords=placeIndex(reference.places,normalizePlace);setPlaceResolver(name=>baseCoords.get(normalizePlace(name))?.location||name);$('referenceinfo').textContent=reference.places.length+' 条';$('datum').value=localStorage.getItem('atlas-datum-v2')||'gcj02';}
+function setupReference(){
+ baseCoords=placeIndex(reference.places,normalizePlace);
+ setPlaceResolver(name=>baseCoords.get(normalizePlace(name))?.location||name);
+ cache.clear();
+ rangeCache=null;
+ timelineKey='';
+ activityCache=new WeakMap();
+ $('referenceinfo').textContent=reference.places.length+' 条';
+ $('datum').value=localStorage.getItem('atlas-datum-v2')||'gcj02';
+}
 async function readConfigFiles(){const r=await fetch('api/config',{cache:'no-store'});if(!r.ok)throw Error('配置读取失败');const d=await r.json();rules=d;emojiConfig=d.emojis;configVersion=d.version;}
 function renderBlacklist(){const all=rules.blacklist||[],type=$('blacklist-type').value||'all',q=$('blacklist-search').value.toLowerCase();$('blacklist-summary').textContent=all.length+' 条';if(!$('rule-list-details').open)return;$('blacklist-rows').innerHTML=all.map((r,i)=>({r,i})).filter(({r})=>(type==='all'||r.type===type)&&(!q||[r.value,r.reason,r.type].join(' ').toLowerCase().includes(q))).map(({r,i})=>'<div class="blacklist-row '+(r.enabled==='0'?'off':'')+'"><label class="check"><input type="checkbox" data-rule-toggle="'+i+'" '+(r.enabled!=='0'?'checked':'')+(blacklistBusy||mobileSource?' disabled':'')+' aria-label="启用此规则"><span class="rule-type">'+(r.type==='event'?'事件':'地点')+'</span></label><div class="rule-body"><b>'+E(r.value)+'</b><small>'+({contains:'包含关键词',exact:'完整名称',uid:'事件 UID'}[r.match_type]||r.match_type)+'</small></div><div class="rule-actions"><button data-rule-edit="'+i+'" '+(blacklistBusy||mobileSource?'disabled':'')+' title="编辑规则" aria-label="编辑规则">'+entityIcon('edit')+'</button><button data-rule-delete="'+i+'" '+(blacklistBusy||mobileSource?'disabled':'')+' title="删除规则" aria-label="删除规则">'+entityIcon('trash')+'</button></div></div>').join('')||'<div class="empty">没有匹配规则</div>';$('blacklist-rows').querySelectorAll('[data-rule-toggle]').forEach(el=>el.onchange=async()=>{const rows=structuredClone(rules.blacklist);rows[+el.dataset.ruleToggle].enabled=el.checked?'1':'0';await persistBlacklist(rows);});$('blacklist-rows').querySelectorAll('[data-rule-edit]').forEach(el=>el.onclick=()=>editBlacklist(+el.dataset.ruleEdit));$('blacklist-rows').querySelectorAll('[data-rule-delete]').forEach(el=>el.onclick=async()=>{const rows=rules.blacklist.filter((r,i)=>i!==+el.dataset.ruleDelete);await persistBlacklist(rows);});}
 async function persistBlacklist(rows,version=configVersion){if(blacklistBusy)return false;blacklistBusy=true;$('blacklist-error').textContent='';renderBlacklist();try{const response=await fetch('api/config',{method:'POST',headers:{'Content-Type':'application/json','X-Atlas-Write':'1'},body:JSON.stringify({version,blacklist:rows})});const d=await response.json();if(!response.ok)throw Error(d.error||'黑名单保存失败');rules=d;emojiConfig=d.emojis;configVersion=d.version;timelineKey='';refresh();updateDataTimes(['blacklist']);return true;}catch(e){$('blacklist-error').textContent=e.message;return false;}finally{blacklistBusy=false;renderBlacklist();}}
@@ -1914,25 +2004,39 @@ async function updateSource(key,button,file){
  const status=$(sourceStatusIds[key]);
  const label=button.getAttribute('aria-label');
  const {route}=importTypes[key];
- const controls=document.querySelectorAll('[data-meta="'+key+'"],[data-upload-source="'+key+'"]');
+ const syncing=!mobileSource&&button.id==='outlook-calendar-sync';
+ const controls=document.querySelectorAll('[data-meta="'+key+'"],[data-upload-source="'+key+'"]'
+  +(key==='calendar'?',#desktop-calendar-import':''));
  busySources.add(key);
  for(const control of controls)control.disabled=true;
  status.textContent=label+'中…';
+ let syncResult;
  try{
-  if(file){
+  if(syncing){
+   const response=await fetch('api/calendar/outlook-sync',{method:'POST',headers:{'X-Atlas-Write':'1'}});
+   const result=await response.json();
+   if(!response.ok)throw Error(result.error||'Outlook 日历导出失败');
+   syncResult=result;
+  }else if(file){
    const result=await fetch('api/'+route,{method:'PUT',body:await file.text()});
    if(!result.ok)throw Error((await result.json()).error||'文件保存失败');
   }
   await reloadSource(key);
-  status.textContent=label+'成功';
+  status.textContent=syncResult
+   ?(syncResult.changed?'Outlook 日历已同步':'Outlook 导出内容与本地日历一致')
+   :label+'成功';
  }catch(error){
-  status.textContent=label+'失败：'+error.message;
+  status.textContent=syncResult?'已完成 Outlook 同步，页面刷新失败：'+error.message:label+'失败：'+error.message;
  }finally{
   busySources.delete(key);
   for(const control of controls)control.disabled=false;
  }
 }
 for(const button of document.querySelectorAll('[data-meta]')){
+ if(mobileSource&&button.id==='outlook-calendar-sync'){
+  button.title='刷新日历';
+  button.setAttribute('aria-label','刷新日历');
+ }
  button.onclick=()=>updateSource(button.dataset.meta,button);
 }
 if(mobileImport)for(const button of document.querySelectorAll('[data-upload-source]')){
@@ -2393,18 +2497,8 @@ $('trip-share-save').onclick=async()=>{
  const prepared=tripSharePreview;
  if(!prepared)return;
  const button=$('trip-share-save'),status=$('trip-share-status'),dialog=$('trip-share-dialog');
- const current=()=>prepared===tripSharePreview&&dialog.open;
- button.disabled=true;
- try{
-  const png=await encodePng(prepared.canvas);
-  if(!current())return;
-  downloadImage(png,prepared.filename,dialog);
-  status.textContent='已下载 PNG';
- }catch{
-  if(current())status.textContent='图片导出失败，请重试';
- }finally{
-  if(current())button.disabled=false;
- }
+ await saveReportPng(button,status,dialog,prepared.filename,()=>prepared.canvas,
+  ()=>prepared===tripSharePreview);
 };
 let tripOpenRequest=0;
 async function openTrips(selected){
@@ -2917,15 +3011,21 @@ function renderAnnual(year,custom=$('annual-year-select').value==='range'){
  shanghaiMap.onpointerleave=event=>{if(event.pointerType!=='touch')tooltip.hidden=true;};
  const amount=custom?null:editMetroExpense(period.filename);
  $('annual-export').disabled=false;
- $('annual-export').onclick=()=>{
+ const exportButton=$('annual-export'),dialog=$('annual-review');
+ const exportCurrent=()=>{
   const stats=amount?[...report.stats,['地铁费用',amount()]]:report.stats;
   const paper=palettes[currentTheme];
-  const national=!nightMode&&nationalFont===20?nationalMap:document.createElement('canvas');
-  const shanghai=nightMode||compact?document.createElement('canvas'):shanghaiMap;
-  if(national!==nationalMap)paintNational(national,20,paper);
-  if(shanghai!==shanghaiMap)paintShanghai(shanghai,false,paper);
-  return exportAnnual({...report,stats,highlight},national,shanghai,paper);
+  return saveReportPng(exportButton,$('annual-status'),dialog,report.filename,()=>{
+   const national=!nightMode&&nationalFont===20?nationalMap:document.createElement('canvas');
+   const shanghai=nightMode||compact?document.createElement('canvas'):shanghaiMap;
+   if(national!==nationalMap)paintNational(national,20,paper);
+   if(shanghai!==shanghaiMap)paintShanghai(shanghai,false,paper);
+   const image=document.createElement('canvas');
+   drawAnnualImage(image,{...report,stats,highlight},national,shanghai,paper);
+   return image;
+  },()=>exportButton.onclick===exportCurrent);
  };
+ exportButton.onclick=exportCurrent;
 }
 async function encodePng(image){
  const png=await new Promise(resolve=>image.toBlob(resolve,'image/png'));
@@ -2943,16 +3043,19 @@ function downloadImage(png,filename,dialog){
  link.remove();
  setTimeout(()=>URL.revokeObjectURL(url),30000);
 }
-async function exportAnnual(report,nationalMap,shanghaiMap,palette){
- const status=$('annual-status');
+async function saveReportPng(button,status,dialog,filename,getCanvas,isCurrent){
+ const current=()=>dialog.open&&isCurrent();
+ button.disabled=true;
+ status.textContent='正在生成 PNG…';
  try{
-  const image=document.createElement('canvas');
-  drawAnnualImage(image,report,nationalMap,shanghaiMap,palette);
-  const png=await encodePng(image);
-  downloadImage(png,report.filename,$('annual-review'));
+  const png=await encodePng(getCanvas());
+  if(!current())return;
+  downloadImage(png,filename,dialog);
   status.textContent='已生成 PNG 图片';
  }catch{
-  status.textContent='图片导出失败，请重试';
+  if(current())status.textContent='图片导出失败，请重试';
+ }finally{
+  if(current())button.disabled=false;
  }
 }
 let annualOpenRequest=0;
@@ -3024,7 +3127,11 @@ async function startAtlas(){
   try{load(calendar.value,false,true);calendarReady=true;}catch{}
  }
  if(!calendarReady){
-  $('events').innerHTML='<div class="empty" role="status">未能读取日历，可在设置的偏好中重新读取或选择日历文件。</div>';
+  $('events').innerHTML='<div class="empty" role="status">未能读取日历 <button type="button" data-open-source-settings>打开数据设置</button></div>';
+  $('events').querySelector('[data-open-source-settings]')?.addEventListener('click',()=>{
+   if(!settingsOpen)settingsDrawer(true);
+   document.querySelector('[data-settings-panel="appearance"]')?.click();
+  });
   draw();
  }
  const missing=[];

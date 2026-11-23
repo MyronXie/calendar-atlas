@@ -19,7 +19,7 @@ const appIcons = [
 ];
 const staticFiles = [
   'style.css', 'lib/core.js', 'lib/data-formats.js', 'lib/place-name.js', 'lib/geo.js', 'lib/place-categories.js', 'lib/organize.js', 'lib/basemaps.js', 'lib/emoji.js', 'lib/filters.js', 'lib/appearance.js', 'lib/timeline.js', 'lib/annual-review.js',
-  'lib/calendar-import.js', 'lib/travel.js', 'lib/trip-share.js',
+  'lib/calendar-import.js', 'lib/travel.js', 'lib/trip-share.js', 'lib/activity.js',
   'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/leaflet.markercluster.js', 'vendor/MarkerCluster.css', 'vendor/MarkerCluster.Default.css', 'vendor/leaflet-heat.js', 'vendor/ical.min.js',
   'data/world.json', 'data/china.json', 'data/shanghai-landmarks.json',
   'assets/icons/favicon-32.png', 'assets/icons/apple-touch-icon.png', ...appIcons.map(icon => icon.src),

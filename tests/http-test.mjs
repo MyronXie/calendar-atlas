@@ -45,6 +45,11 @@ try{
  assert.deepEqual(initial.places,[]);
  const updates=[{location:'Synthetic place',lat:'31.2',lon:'121.4',datum:'wgs84',address:'Test address'}];
  const headers={'Content-Type':'application/json','X-Atlas-Write':'1',Origin:base};
+ const syncRoute='/api/calendar/outlook-sync';
+ assert.equal((await request(syncRoute)).status,403);
+ assert.equal((await request(syncRoute,{method:'POST',headers:{'X-Atlas-Write':'1'}})).status,403);
+ assert.equal((await request(syncRoute,{method:'POST',headers:{Origin:base}})).status,403);
+ assert.equal((await request(syncRoute,{method:'POST',headers:{...headers,Origin:'https://example.com'}})).status,403);
  const save=(version,extra={})=>request('/api/places',{method:'POST',headers:{...headers,...extra},body:JSON.stringify({version,updates})});
  assert.equal((await save(initial.version)).status,200);
  assert.equal((await read()).places.length,1);
@@ -78,6 +83,7 @@ try{
   else await response.arrayBuffer();
  }
  assert.equal((await request('/tools/place-sync.mjs')).status,404);
+ assert.equal((await request('/tools/export-outlook-calendar.ps1')).status,404);
  const [index,part]=await Promise.all(['/data/city-index.json','/data/cities/31.json']
   .map(route=>request(route).then(response=>response.json())));
  assert.ok(index.length>300&&index.every(city=>!Object.hasOwn(city,'geometry')));
