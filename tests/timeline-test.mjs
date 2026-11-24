@@ -1,8 +1,5 @@
-import assert from 'node:assert/strict';import {periodCounts,addMatches,barHeights,periodRange,timelineCountLayout,monthlyColumns,frequencyBuckets,dateConditionGroups,hourGroups,dateBucketGroups} from '../lib/timeline.js';const es=[{start:new Date(2020,0,1)},{start:new Date(2020,1,1)},{start:new Date(2021,0,1)}];let rows=addMatches(periodCounts(es,false,2020,2021),[es[0]],false,2020);assert.deepEqual(rows,[{index:2020,total:2,matched:1},{index:2021,total:1,matched:0}]);rows=addMatches(periodCounts(es,true,2020*12,2021*12+11),[es[0]],true,2020*12);assert.equal(rows[0].matched,1);assert.equal(rows[0].total,1);assert.equal(rows[1].matched,0);assert.equal(rows[1].total,1);assert.deepEqual(barHeights(0,0,100),{total:0,matched:0});assert.equal(barHeights(1,1,10000).total,7);assert.equal(barHeights(1,1,10000).matched,7);assert.ok(barHeights(1000,1,1000).matched>82/1000);assert.ok(barHeights(1000,1,1000).matched<=82*.101);console.log('Timeline denominators, highlights and minimum heights: passed');
+import assert from 'node:assert/strict';import {periodCounts,addMatches,barHeights,timelineCountLayout,monthlyColumns,frequencyBuckets,dateConditionGroups,hourGroups,dateBucketGroups,heatmapMonths} from '../lib/timeline.js';const es=[{start:new Date(2020,0,1)},{start:new Date(2020,1,1)},{start:new Date(2021,0,1)}];let rows=addMatches(periodCounts(es,false,2020,2021),[es[0]],false,2020);assert.deepEqual(rows,[{index:2020,total:2,matched:1},{index:2021,total:1,matched:0}]);rows=addMatches(periodCounts(es,true,2020*12,2021*12+11),[es[0]],true,2020*12);assert.equal(rows[0].matched,1);assert.equal(rows[0].total,1);assert.equal(rows[1].matched,0);assert.equal(rows[1].total,1);assert.deepEqual(barHeights(0,0,100),{total:0,matched:0});assert.equal(barHeights(1,1,10000).total,7);assert.equal(barHeights(1,1,10000).matched,7);assert.ok(barHeights(1000,1,1000).matched>82/1000);assert.ok(barHeights(1000,1,1000).matched<=82*.101);console.log('Timeline denominators, highlights and minimum heights: passed');
 
-assert.deepEqual(periodRange(2020,2021,false),['2020-01-01','2021-12-31']);
-assert.deepEqual(periodRange(2024*12+1,2024*12+1,true),['2024-02-01','2024-02-29']);
-assert.deepEqual(periodRange(2025*12+1,2024*12+11,true),['2024-12-01','2025-02-28']);
 
 const large=timelineCountLayout(82,53,14);
 assert.deepEqual(large,{total:{bottom:85},hit:{bottom:16},dated:{bottom:55}});
@@ -49,10 +46,16 @@ assert.deepEqual(dateConditionGroups(facet('hour',...night.hours)).map(({scope,l
  [['hour','深夜',[0,1,2,3,4,22,23]]]);
 
 const monthly=monthlyColumns(53,2025*12+10,2026*12+3);
-assert.equal(monthly.columnWidth,8);
+assert.equal(monthly.columnWidth,50/6);
 assert.equal(monthly.yearGap,3);
-assert.deepEqual(monthly.groups.map(({year,left,width})=>[year,left,width]),[[2025,1,16],[2026,20,32]]);
+assert.deepEqual(monthly.groups.map(({year,left,width})=>[year,left,width]),[[2025,0,50/3],[2026,50/3+3,100/3]]);
 const dense=monthlyColumns(18,2025*12,2026*12+11);
 assert.equal(dense.columnWidth,.75);
 assert.equal(dense.yearGap,0);
 assert.equal(dense.groups[1].left,9);
+
+const leapMonths=heatmapMonths(2024);
+assert.equal(leapMonths[1].days.length,29);
+assert.equal(leapMonths[2].days.length,31);
+assert.equal(heatmapMonths(2025)[1].days.length,28);
+assert.equal(leapMonths[1].days.at(-1),'2024-02-29');

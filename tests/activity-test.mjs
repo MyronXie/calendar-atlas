@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import {classifyActivity} from '../lib/activity.js';
+import {activityIcon,classifyActivity} from '../lib/activity.js';
 import {expand,parseCalendar,setPlaceResolver} from '../lib/core.js';
 import {createEventMatcher,criterion} from '../lib/filters.js';
 
@@ -16,6 +16,12 @@ const result=(event,label,source)=>assert.deepEqual(classifyActivity(event,looku
 result(sample('[周末] 演出', '备注\n活动：桌游',['影院']),'桌游','备注标注');
 result(sample('音乐剧《示例》','',['体育馆']),'音乐剧','事件标题');
 result(sample('吃吃吃'),'餐饮','事件标题');
+result(sample('广州之旅 · 看电影','',['影院']),'旅行','事件标题');
+result(sample('生日聚餐'),'生日','事件标题');
+result(sample('ONE MAN LIVE China Tour'),'现场音乐','事件标题');
+assert.equal(classifyActivity(sample('Live Photo 整理'),lookup),null);
+assert.equal(activityIcon(classifyActivity(sample('[示例组] 看电影《示例》'),lookup)?.label),'activity-film');
+assert.equal(activityIcon('未配置活动'),null);
 assert.equal(classifyActivity(sample('逛吃逛吃','',['影院']),lookup),null);
 assert.equal(classifyActivity(sample('看电影再玩桌游','',['影院']),lookup),null);
 assert.equal(classifyActivity(sample('近况','活动：桌游\n活动：电影',['影院']),lookup),null);
