@@ -1,66 +1,22 @@
 # 日历足迹协作指南
 
-## 接手时先做什么
+## 接手
 
-1. 在仓库根目录查看 `git status --short --branch` 和 `git log -5 --oneline`，确认基线、已有改动与本轮交付范围。推送 `main` 会触发 Pages 发布工作流。
-2. 按任务选择文档。日常使用见 [使用说明](docs/使用说明.md)，验证、交接、构建发布和恢复见 [维护与备份](docs/维护与备份.md)，地点核验见 [地点维护流程](docs/地点维护流程.md)，视觉规范见 [配色清单](docs/配色清单.md)，控件参数见 [控件参数清单](docs/控件参数清单.md)，模块入口见 [工程文件说明](docs/工程文件说明.md)。
-3. 先用合成数据与 `npm test` 验证。测试及调试日志不需要真实日历或地点库。
+1. 在仓库根目录运行 `git status --short --branch` 和 `git log -5 --oneline`。区分已有改动和本轮范围。
+2. 先用合成数据与 `npm test` 验证。测试和调试日志避免使用真实日历、地点与照片。
+3. 推送 `main` 会触发 Pages 发布。提交或推送前按[维护与备份](docs/维护与备份.md)检查交付范围和产物。
 
-## 从零运行
+## 入口
 
-- 使用 Node.js 22 或更新版本。桌面、单元测试和静态网页构建直接使用仓库内的代码和 `vendor/`，无需 `npm install`。Windows 的 `启动足迹.cmd` 和 `关闭足迹.cmd` 分别负责启动与停止。命令行也可运行 `npm start`，用 Ctrl+C 停止该前台进程。
-- 桌面服务默认监听 `127.0.0.1:8787`。浏览器打开同一地址，`/api/health` 可检查服务是否在线。前端变更重载页面即可，`server/server.mjs` 及它导入的服务端模块变更后重启服务。
-- 桌面读取项目根目录 `atlas-data/calendar.ics`、`place.csv`、`config.json`。在**全新测试副本**中可创建 `atlas-data/`，分别复制 `tests/fixtures/fixture.ics`、`tests/fixtures/place.csv`、`tests/fixtures/config.json` 为这三个文件名。保留现有私人文件。如果样例超出了默认的近一年范围，点时间标题的日期，在弹窗中选择「全部」并应用。
-- 无私人数据移动预览用 `node tools/build-mobile.mjs --data-less`，再运行 `node mobile/serve.mjs`，默认端口 8790。用同一组合成文件在导入框选择即可。构建会重建 `mobile/`，修改应落在源文件中。
+- 用户操作、双端手势和数据格式见[使用说明](docs/使用说明.md)。
+- 代码索引、合成数据、运行、构建和发布见[维护与备份](docs/维护与备份.md)。
+- 主题及布局约定见[控件参数清单](docs/控件参数清单.md)。地点数据核验见[地点维护流程](docs/地点维护流程.md)。
 
-## 代码入口
+## 改动约定
 
-| 任务 | 入口 |
-| --- | --- |
-| 页面结构、响应式、抽屉、共享筛选 | `index.html`、`style.css`、`app.js`。先看 `startAtlas()`、`refresh()` |
-| ICS 解析、重复事件、导入预览和 Outlook 同步 | `lib/core.js`、`lib/calendar-import.js`、`server/calendar-store.mjs`、`server/outlook-calendar.mjs`、`tools/export-outlook-calendar.ps1` |
-| 筛选匹配、日期条件、柱图和计数 | `lib/filters.js`、`lib/timeline.js`、`lib/travel.js`，以及 `app.js` 的时间视图和统计渲染 |
-| 地点定位、别名、分类、排除规则 | `lib/organize.js`、`lib/geo.js`、`lib/place-name.js`、`lib/place-categories.js`、`lib/data-formats.js`、`server/csv-store.mjs`、`server/config-store.mjs` |
-| 瓦片、全国边界、上海图层 | `lib/basemaps.js`、`lib/city-boundary-data.mjs`、`data/`、`app.js`、`lib/annual-review.js` |
-| 年度回顾、行程、分享图 | `lib/annual-review.js`、`lib/travel.js`、`lib/trip-share.js` 与 `app.js` 中对应对话框 |
-| 主题、图标、应用版本 | `lib/appearance.js`、`style.css`、`index.html` 的 SVG 图标、`assets/icons/`、`server/app-version.mjs` |
-| 桌面接口、移动构建和发布 | `server/server.mjs`、`server/atlas-data.mjs`、`server/atomic-file.mjs`、`tools/build-mobile.mjs`、`tools/mobile-data-provider.js`、`tools/mobile-readonly.js`、`.github/workflows/` |
-
-> 分层约定：`lib/` 放浏览器与 Node 都能用的纯逻辑；`server/` 放桌面服务的文件读写与 HTTP；`tools/` 放离线数据源运维与构建；`index.html`、`app.js`、`style.css` 留在仓库根作为网页根目录（GitHub Pages 以此为 web root）。
-
-## 当前行为与更新约定
-
-### 启动与筛选
-
-- 启动先读取日历、地点和配置并显示事件。时间、地点和排行每次启动时收起，展开后才计算相应内容。全国边界、城市索引和详细图层按需读取。移动包也把这些资源放入按需缓存清单。入口见 `startAtlas()`、`refreshVisiblePanels()` 和 `loadChina()`。
-- ICS 解析按 UID 将重复事件例外关联到所属系列。`parseCalendar()` 显式接管例外关联，避免 ICAL 为每个事件扫描整个日历。改解析时用两个同一时刻发生的独立重复系列验证改期和取消的归属。
-- 事件搜索即时更新列表，并合并刷新当前打开的统计、排行和地图。回车提交条件，同一地点的别名在预览和提交时都解析到主名称。标题栏的宽度测量发生在尺寸、标题占位或模式变化时。入口见 `refresh()`、`createEventMatcher()` 和 `scheduleSectionTools()`。
-- 时间标题的日期弹窗负责修改范围。总览查看计数，筛选模式可点选或横拖柱子添加日期条件。日期条件和事件筛选在搜索框下方共用一行标签。清空事件筛选保留范围和日期条件。日期条件可逐项移除或从时间工具栏重置，同类取并集，不同类型取交集。
-- 时间统计按「筛选命中 / 日期条件 / 范围总数」显示，前两项仅在对应条件生效时出现。柱图数字拥挤时优先保留总数和命中数，相同的日期条件数可省略。「年/月」总览在同一屏显示等宽月柱和年度轮廓，「日」总览可横向滑动。
-
-### 布局与交互
-
-- 工具栏左侧为排行和应用名称，中间为行程与回顾，右侧为设置。复用 `style.css` 中 36 px 常规、32 px 紧凑的尺寸变量。根字号默认 15 px，标题为根字号 +3 px。主色用于选中与主操作，对比色用于筛选命中。保留默认字体与桌面字号偏好，日间和夜间都要检查。
-- 双栏根据主内容宽度切换，各栏最小宽度 440 px。分割条两侧留白对齐，右栏独立滚动，单栏切回双栏时恢复平分。事件列表按日分组。窄栏在时刻旁依次排事件、地点、人物和命中关键词的备注。单栏保留页内吸顶和滚动。
-- 时间标题栏按日期旁的剩余宽度，先隐藏操作文字，再简写「总览／筛选」，最后收窄时间单位。简写后的模式按钮宽度固定。竖屏可长按柱子查看计数。柱图、地图底部拖动手柄与偏好双向同步，所选高度刷新后保留。
-- 点击排行左侧的排名数字可移入「不参与排名」，随后点击隐藏图标恢复。点击名称仍用于筛选。备注筛选和显示共同跳过 `Partner:` 与 `Place:` 行。
-- 移动端次要按钮统一 `--control-height`（36 px），排行、设置、重置、地点／人物、清空、抽屉外侧的关闭键、对话框中行程/回顾的导出与关闭、时间栏操作等高。矮屏（如手机横屏，`max-height:540px`）主标题栏随页面滚动，旅游行程／年度回顾简写为行程／回顾，应用名隐藏，并按打开的抽屉只保留排行或设置其中一个文字。时间单位与总览／筛选使用圆角矩形按钮。移动版日期输入在 iOS Safari 下用 flex 做水平与垂直居中，打开时间范围时不自动弹出起始日期选择器。
-
-### 地图、导出和文件
-
-- 主地图容器尺寸变化后通知 Leaflet 重新计算瓦片覆盖。放大地图时单点和 Emoji 变大，缩小时同步变小。聚合点沿用主题配色的双层圆圈。主地图上海与年度回顾上海各有自己的视野和开关，切换地点在线底图保留视野。
-- 行程右侧可暂时隐藏已定位的地点，总览和分日共用选择。隐藏地点也从导出地点清单、点位和路线中移除。行程预览和下载共用同一张画布，底图署名随供应商变化。年度回顾的「导出」直接下载 PNG。
-- 行程地点按天独立隐藏：点击只隐藏该天的标签，只有某地点在所有相关日期都被隐藏时才从地图移除。事件列表「加载更多」保持当前滚动位置；页面滚动后可点右下角悬浮按钮返回顶部。
-- 桌面手动替换日历后刷新浏览器页面。地点和配置的刷新入口在各自文件标题旁。应用内保存会更新页面和更新时间。桌面日历「＋」先预览变更，确认后替换活动文件。
-- 桌面偏好中的日历刷新图标通过 Windows 经典版 Outlook 同步默认日历的全部日期。移动端同一图标重新读取已导入的日历。Outlook 同步保留临时导出、解析校验、版本检查、备份和原子替换的顺序。测试同步流程使用合成 ICS 与模拟导出器。
-
-## 数据与交付
-
-- `atlas-data/`、其中的备份、生成的报告、照片与查询缓存、密钥和签名文件留在本地。`data/` 是程序使用的公开地图数据。`tests/fixtures/` 是合成测试素材（含 `fixture.ics`、`place.csv`、`config.json`）。
-- `config.json` 采用 v2 分组结构：`filters.blacklist`（事件/地点排除）、`emojis`（图标映射）、`photos.exclusions`（照片日常区域）。旧扁平结构仍可读，保存时自动升级为 v2。照片排除已并入这里，不再使用单独的 `photo-exclusions.json`。
-- 地点显示与计数以 `place.csv` 的 `location` 为准：日历里通过 `aliases` 命中的写法，读入应用后统一显示为对应 `location`，避免同一地点分开计数；搜索时输入别名也会先映射到 `location`。新增/编辑地点时 `address` 必须写全称（省/自治区/直辖市 + 市/州 + 区/县 + 道路/门牌）；境外用英文地址。
-- 从 Outlook 等客户端导出的 `calendar.ics` 含 Word 生成的 `X-ALT-DESC` HTML 冗余（与 `DESCRIPTION` 重复，约 97% 是样板）。导出替换后跑 `npm run clean:calendar -- --write`（或双击 `tools/清理日历.cmd`）清除：先备份到 `.backups/`，逐条比对事件不变才写入，通常缩约 30%。客户端每次导出会重新带回，属例行一步。
-- 极少数事件正文是 Word 富文本，单条 `X-ALT-DESC` 约 38KB。可用 `tools/Outlook正文转纯文本.cmd`（`tools/outlook-plaintext.ps1`）在 Outlook 里批量改成纯文本：先用 RTF 体积筛候选，默认只预览，`-Apply` 才改；仅中文界面 Outlook、须 Windows PowerShell 5.1。改完可永久减小导出，零散小 HTML 仍靠上一条清理。
-- 桌面使用本地 HTTP API。发布的移动包用 `--data-less`，手机导入缓存到当前应用的 IndexedDB。浏览器偏好在 localStorage。桌面更新文件后，手机需用新文件分别替换。
-- 增加浏览器端模块或静态资源时，同时检查 `server/server.mjs` 的读取白名单和 `tools/build-mobile.mjs` 的复制与缓存清单。改 API 时对照移动数据提供器，桌面可编辑与手机导入模式的职责不同。
-- 运行 `npm test`，再按改动范围验证桌面启动、手机导入、窄屏触控和宽屏滚动。涉及发布时检查暂存文件和 `--data-less` 产物，再按[维护与备份](docs/维护与备份.md)核对 Pages。
+- `index.html`、`style.css`、`app.js` 是前端入口。浏览器与 Node 共用逻辑放 `lib/`，桌面 HTTP 与文件读写放 `server/`，构建和运维放 `tools/`。新增前端资源时同步检查桌面静态白名单和移动打包、缓存清单。
+- 首屏优先显示事件列表，时间、地图和排行按需计算。改动时间轴时，保留统计范围、日期条件和事件筛选的独立清除行为。总览提示只用于查看计数，触屏滑动和轻点分别处理。
+- ICS 重复例外按 UID 关联所属系列。改动解析时同时验证独立重复系列的改期和取消。地点别名在显示、搜索、逐日行程和计数中统一为主名称。
+- Windows 桌面通过 `日历足迹.cmd` 管理，或以 `npm start` 前台运行。移动版由 `tools/mobile-data-provider.js` 接管导入、刷新和读取。
+- 个人日历、地点库、配置、备份、照片、报告和密钥留在本地。公开构建使用 `--data-less`。改动文件写入时保留备份、版本冲突检查及原子替换。
+- 验证时按改动范围覆盖桌面与窄屏、日夜主题、触控和键盘。交接简述改动、验证结果和提交状态。

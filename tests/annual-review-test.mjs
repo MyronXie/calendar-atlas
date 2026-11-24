@@ -100,6 +100,13 @@ const dots = drawShanghaiMap(shanghaiMap,boundaries,landmarks,places);
 assert.equal(dots.filter(p=>p.name==='中心点位').length,2);
 assert.equal(dots.filter(p=>p.name==='外围点位').length,1);
 assert.ok(dots.every(({x,y})=>x>0&&x<shanghaiMap.width&&y>0&&y<shanghaiMap.height));
+const clusteredShanghai=recordingCanvas();
+const clusters=drawShanghaiMap(clusteredShanghai,boundaries,landmarks,[
+ ...places,{name:'附近点位',lon:121.4752,lat:31.2292},
+],{aggregate:true});
+assert.equal(clusters.filter(marker=>marker.names?.includes('中心点位')&&marker.names.includes('附近点位')).length,2);
+assert.ok(clusters.some(marker=>marker.name==='外围点位'));
+assert.ok(clusteredShanghai.texts.some(({text})=>text==='2'));
 const stackedShanghai=recordingCanvas();
 const stackedDots=drawShanghaiMap(stackedShanghai,boundaries,landmarks,places,{stacked:true});
 assert.ok(stackedShanghai.height>stackedShanghai.width);

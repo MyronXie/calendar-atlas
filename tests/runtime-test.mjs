@@ -3,7 +3,7 @@ import {fileURLToPath} from 'node:url';
 const fixtures=new URL('./fixtures/',import.meta.url);
 import fs from 'node:fs/promises';import assert from 'node:assert/strict';import {parseCSV} from '../server/csv-store.mjs';
 class Element{constructor(){this.value='';this.checked=true;this.style={setProperty(name,value){this[name]=value;}};this.classList={toggle(){},add(){},remove(){}};this.children=[];this.dataset={};this.elements={};this.min=0;this.max=0;}set innerHTML(s){this.html=s;this.queryCache={};}get innerHTML(){return this.html||'';}querySelectorAll(selector){if(!['[data-period]','[data-frequency-bucket]','[data-remove-date]','[data-event-day]','[data-clear-event-day]','[data-filter-place]','[data-filter-person]','[data-rank-name]','[data-edit-rank]','[data-rank-toggle]','[data-edit]','[data-event-detail]','[data-remove-filter]','[data-rule-toggle]','[data-rule-delete]','[data-rule-edit]','[data-theme-choice]'].includes(selector))return [];this.queryCache||={};if(this.queryCache[selector])return this.queryCache[selector];const attr=selector.slice(1,-1),key=attr.slice(5).replace(/-([a-z])/g,(_,x)=>x.toUpperCase());const decode=x=>x.replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');return this.queryCache[selector]=[...this.innerHTML.matchAll(new RegExp(attr+'="([^"]*)"','g'))].map(m=>{const el=new Element();el.dataset[key]=decode(m[1]);return el;});}querySelector(){return null;}showModal(){this.open=true;}close(){this.open=false;}setAttribute(k,v){this.attributes||={};this.attributes[k]=v;}addEventListener(type,handler){this.listeners||={};this.listeners[type]=handler;}setPointerCapture(){}getBoundingClientRect(){return {width:900,height:490,left:0,top:0};}}
-const shanghaiInputs=['metro','roads','boundaries','landmarks'].map(name=>Object.assign(new Element(),{name}));
+const shanghaiInputs=['metro','roads','boundaries','landmarks','aggregate'].map(name=>Object.assign(new Element(),{name}));
 const shanghaiControl=new Element();
 const placeInputs=['heatmap','aggregate'].map(name=>Object.assign(new Element(),{name}));
 const placeControl=new Element();
@@ -44,7 +44,7 @@ function editTimeRange(start,end){
  el('to').value=end;
  el('timeline-range-form').onsubmit({preventDefault(){}});
 }
-assert.ok(!els.get('status').textContent,'Application must load');assert.ok(el('map-body').hidden);assert.ok(el('map-tools').hidden);assert.match(el('map-title').textContent,/^地点 · \d+$/);assert.ok(el('timeline-body').hidden);assert.equal(el('toggle-drawer').attributes['aria-expanded'],'false');assert.equal(chinaRequests,0);assert.ok(el('timeline-range-indicator').hidden);await el('collapse-map').onclick();assert.equal(chinaRequests,1);assert.match(el('map-title').textContent,/^地点 · \d+$/);el('toggle-drawer').onclick();assert.ok(icons.some(h=>h.includes('single-emoji')));assert.ok(!icons.some(h=>h.includes('>1</span>')));assert.ok(els.get('events').innerHTML.includes('<article class="event">'));assert.ok(!els.get('events').innerHTML.includes('<summary>'));const ev=els.get('events');const dateButton=ev.querySelectorAll('[data-event-day]')[0];assert.ok(dateButton);const originalDates=getTimeRange();
+assert.ok(!els.get('status').textContent,'Application must load');assert.ok(el('map-body').hidden);assert.ok(el('map-tools').hidden);assert.match(el('map-title').textContent,/^地点 · \d+$/);assert.ok(el('timeline-body').hidden);assert.equal(el('toggle-drawer').attributes['aria-expanded'],'false');assert.equal(chinaRequests,0);assert.ok(el('timeline-range-indicator').hidden);await el('collapse-map').onclick();assert.equal(chinaRequests,1);assert.match(el('map-title').textContent,/^地点 · \d+$/);el('toggle-drawer').onclick();assert.ok(icons.some(h=>h.includes('visit-marker-face')&&h.includes('<use href=')));assert.ok(!icons.some(h=>h.includes('>1</span>')));assert.ok(els.get('events').innerHTML.includes('<article class="event">'));assert.ok(!els.get('events').innerHTML.includes('<summary>'));const ev=els.get('events');const dateButton=ev.querySelectorAll('[data-event-day]')[0];assert.ok(dateButton);const originalDates=getTimeRange();
 dateButton.onclick();
 assert.match(ev.innerHTML,/event-day is-filtered/);
 assert.equal(el('timeline-date-conditions').innerHTML,'');
@@ -258,11 +258,11 @@ assert.deepEqual(mapViews.at(-1)?.[0],[31.23,121.47]);
 assert.equal(mapViews.at(-1)?.[1],9);
 assert.equal(mapFits.length,beforeShanghaiFits);
 assert.equal(shanghaiControl.hidden,false);
-assert.deepEqual(shanghaiInputs.map(i=>i.checked),[false,true,true,false]);
+assert.deepEqual(shanghaiInputs.map(i=>i.checked),[false,true,true,false,false]);
 const metroInput=shanghaiInputs[0];
 metroInput.checked=true;
 shanghaiControl.listeners.change({target:metroInput});
-assert.deepEqual(JSON.parse(savedStorage.get('atlas-shanghai-layers')),{boundaries:true,roads:true,metro:true,landmarks:false});
+assert.deepEqual(JSON.parse(savedStorage.get('atlas-shanghai-layers')),{boundaries:true,roads:true,metro:true,landmarks:false,aggregate:false});
 assert.equal(mapFits.length,beforeShanghaiFits);
 document.getElementById('reset').onclick();
 assert.ok(mapFits.length>beforeShanghaiFits);
@@ -279,7 +279,7 @@ focusVisitedCities.checked=true;focusVisitedCities.onchange();
 assert.ok(includeSouthChinaSea.disabled);
 includeChongming.checked=false;includeChongming.onchange();
 innerRing.checked=true;innerRing.onchange();
-assert.deepEqual(JSON.parse(localStorage.getItem('atlas-review-map-options')),{focusVisitedCities:true,includeSouthChinaSea:false,includeChongming:false,innerRing:true});
+assert.deepEqual(JSON.parse(localStorage.getItem('atlas-review-map-options')),{focusVisitedCities:true,includeSouthChinaSea:false,includeChongming:false,innerRing:true,aggregateShanghai:false});
 assert.equal(mapFits.length,afterShanghaiFits);
 assert.equal(mainShanghaiDistricts.length,2);
 annualDialog.close();
@@ -291,3 +291,22 @@ focusVisitedCities.checked=false;focusVisitedCities.onchange();
 assert.equal(includeSouthChinaSea.disabled,false);
 assert.equal(includeSouthChinaSea.checked,false);
 assert.equal(innerRing.checked,true);
+
+const tripCalendar=[
+ 'BEGIN:VCALENDAR','VERSION:2.0','BEGIN:VEVENT','UID:synthetic-dated-trip','DTSTAMP:20260101T000000Z',
+ 'DTSTART:20260404T103000','DTEND:20260406T223000','SUMMARY:合成之旅','LOCATION:未分配测试地点',
+ 'DESCRIPTION:Day 1\\nPlace: 测试公园旧称\\nDay 2\\nPlace: 测试博物馆乙','END:VEVENT','END:VCALENDAR','',
+].join('\r\n');
+await el('ics').onchange({target:{files:[{text:async()=>tripCalendar,lastModified:1}],value:''}});
+el('calendar-preview-only').onclick();
+editTimeRange('2026-04-04','2026-04-06');
+const tripList=el('events');
+assert.deepEqual(tripList.querySelectorAll('[data-filter-place]').map(el=>el.dataset.filterPlace),['测试博物馆乙','测试公园甲']);
+assert.equal(tripList.querySelectorAll('[data-event-detail]').length,3);
+tripList.querySelectorAll('[data-filter-place]')[1].onclick();
+assert.deepEqual(tripList.querySelectorAll('[data-event-day]').map(el=>el.dataset.eventDay),['2026-04-04']);
+assert.equal(el('map-title').textContent,'地点 · 1');
+el('unselect').onclick();
+el('search').value='未分配测试地点';
+el('search').oninput();
+assert.equal(tripList.querySelectorAll('[data-event-detail]').length,0);
